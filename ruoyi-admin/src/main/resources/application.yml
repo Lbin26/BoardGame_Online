@@ -110,6 +110,9 @@ security:
     - /warm-flow-ui/config
     - /snail-chat/**
     - /api/snail/chat/**
+    - /ws/chess
+    - /ws/chess/**
+    - /api/chess/**
 
 # MyBatisPlus配置
 # https://baomidou.com/config/

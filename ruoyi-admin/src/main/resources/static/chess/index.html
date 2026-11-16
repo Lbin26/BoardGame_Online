@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国象棋 · 在线对战</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  min-height: 100vh; color: #eee;
+}
+#app { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+.header { text-align: center; padding: 20px 0 30px; }
+.header h1 { font-size: 36px; background: linear-gradient(90deg, #e94560, #f39c12); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header p { color: #888; margin-top: 8px; }
+
+.card {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 10px 24px; border: none; border-radius: 8px;
+  font-size: 15px; cursor: pointer; font-weight: 600;
+  transition: all 0.2s;
+}
+.btn-primary { background: linear-gradient(135deg, #e94560, #c73659); color: white; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(233,69,96,0.4); }
+.btn-secondary { background: rgba(255,255,255,0.1); color: #eee; }
+.btn-secondary:hover { background: rgba(255,255,255,0.2); }
+.btn-danger { background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; }
+.btn-danger:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(231,76,60,0.4); }
+.btn-success { background: linear-gradient(135deg, #27ae60, #1e8449); color: white; }
+.btn-success:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(39,174,96,0.4); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+.input {
+  padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.3); color: #eee; font-size: 14px; outline: none;
+  width: 100%;
+}
+.input:focus { border-color: #e94560; }
+
+.lobby-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 768px) { .lobby-grid { grid-template-columns: 1fr; } }
+
+.create-form { display: flex; gap: 10px; align-items: flex-end; }
+.create-form .input { flex: 1; }
+
+.room-list { max-height: 400px; overflow-y: auto; }
+.room-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; margin-bottom: 8px;
+  background: rgba(255,255,255,0.03); border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.room-info { flex: 1; }
+.room-id { font-family: monospace; font-weight: bold; color: #f39c12; font-size: 18px; }
+.room-players { font-size: 13px; color: #aaa; margin-top: 4px; }
+.room-status { font-size: 12px; padding: 2px 10px; border-radius: 10px; }
+.status-waiting { background: rgba(46,213,115,0.2); color: #2ed573; }
+.status-playing { background: rgba(255,165,0,0.2); color: #ffa502; }
+.status-finished { background: rgba(153,153,153,0.2); color: #999; }
+
+.game-layout { display: grid; grid-template-columns: 280px 1fr 280px; gap: 20px; }
+@media (max-width: 1100px) { .game-layout { grid-template-columns: 1fr; } }
+
+.player-panel { text-align: center; }
+.player-avatar {
+  width: 70px; height: 70px; border-radius: 50%; margin: 0 auto 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; font-weight: bold;
+}
+.avatar-red { background: linear-gradient(135deg, #e94560, #c73659); color: white; }
+.avatar-black { background: linear-gradient(135deg, #333, #555); color: white; }
+.player-name { font-size: 16px; font-weight: 600; }
+.player-tag { font-size: 12px; margin-top: 4px; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+.tag-red { background: rgba(233,69,96,0.2); color: #e94560; }
+.tag-black { background: rgba(255,255,255,0.1); color: #ccc; }
+.turn-indicator {
+  margin-top: 12px; padding: 8px; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+}
+.turn-now { background: rgba(46,213,115,0.2); color: #2ed573; animation: pulse 1.5s infinite; }
+.turn-wait { background: rgba(255,255,255,0.05); color: #888; }
+.in-check-badge { background: rgba(231,76,60,0.3); color: #e74c3c; margin-top: 8px; padding: 6px; border-radius: 8px; font-size: 12px; font-weight: 700; animation: pulse 1s infinite; }
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+.board-container { display: flex; justify-content: center; align-items: flex-start; }
+#chessboard { border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); background: #deb887; max-width: 100%; height: auto; }
+
+.game-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; justify-content: center; }
+.game-actions .btn { padding: 8px 16px; font-size: 13px; flex: 1; min-width: 100px; }
+
+.chat-panel { display: flex; flex-direction: column; height: 400px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 10px; }
+.chat-msg { margin-bottom: 8px; font-size: 13px; }
+.chat-msg .who { font-weight: 600; margin-right: 6px; }
+.chat-msg .who.red { color: #e94560; }
+.chat-msg .who.black { color: #ccc; }
+.chat-msg .who.system { color: #f39c12; font-style: italic; }
+.chat-input { display: flex; gap: 8px; }
+.chat-input .input { flex: 1; }
+
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border: 1px solid rgba(255,255,255,0.2); border-radius: 20px;
+  padding: 40px; text-align: center; max-width: 420px;
+}
+.modal h2 { font-size: 28px; margin-bottom: 12px; }
+.modal p { color: #aaa; margin-bottom: 24px; }
+.modal .btn { margin: 0 8px; }
+
+.hint { font-size: 12px; color: #888; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <h1>♟ 中国象棋 · 在线对战</h1>
+    <p>实时匹配 · WebSocket 对局 · 无需登录</p>
+  </div>
+
+  <!-- Lobby -->
+  <div v-if="!inGame" class="lobby-grid">
+    <div>
+      <div class="card">
+        <h2 style="margin-bottom:16px">🏠 创建房间</h2>
+        <div class="create-form">
+          <input class="input" v-model="myName" placeholder="输入你的昵称" maxlength="12">
+          <button class="btn btn-primary" @click="createRoom">创建</button>
+        </div>
+        <p class="hint">创建房间后你是红方，等别人加入即可开战</p>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-bottom:16px">🚪 输入房间号加入</h2>
+        <div class="create-form">
+          <input class="input" v-model="myName" placeholder="你的昵称" maxlength="12" style="max-width:140px">
+          <input class="input" v-model="joinRoomId" placeholder="房间号(如 ABC123)" maxlength="10">
+          <button class="btn btn-primary" @click="joinRoomInput" :disabled="!joinRoomId.trim()">加入</button>
+        </div>
+        <p class="hint">从朋友那里拿到房间号，输入即可快速入场</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2>📋 房间列表 <span style="color:#888;font-size:13px">(共 {{ rooms.length }} 个)</span></h2>
+        <button class="btn btn-secondary" @click="refreshRooms">🔄 刷新</button>
+      </div>
+      <div class="room-list" v-if="rooms.length > 0">
+        <div v-for="room in rooms" :key="room.roomId" class="room-item">
+          <div class="room-info">
+            <div class="room-id">{{ room.roomId }}</div>
+            <div class="room-players">
+              🔴 {{ room.redPlayerName || '等待中' }}
+              <span v-if="room.blackPlayerName"> ⚫ {{ room.blackPlayerName }}</span>
+              <span v-else> ⚫ 空位</span>
+            </div>
+          </div>
+          <div>
+            <span class="room-status" :class="'status-' + room.status.toLowerCase()">{{ statusText(room.status) }}</span>
+            <button v-if="room.status.toLowerCase() === 'waiting'" class="btn btn-primary" style="margin-left:8px;padding:6px 16px" @click="joinRoomById(room.roomId)">加入</button>
+          </div>
+        </div>
+      </div>
+      <div v-else style="text-align:center;color:#666;padding:40px">暂无房间，创建一个吧！</div>
+    </div>
+  </div>
+
+  <!-- Game -->
+  <div v-else class="game-layout">
+    <div class="card player-panel">
+      <div class="player-avatar avatar-black">{{ (room?.blackPlayerName || '?').charAt(0).toUpperCase() }}</div>
+      <div class="player-name">{{ room?.blackPlayerName || '等待玩家...' }}</div>
+      <div class="player-tag tag-black">⚫ 黑方</div>
+      <div class="turn-indicator" :class="isBlackTurn ? 'turn-now' : 'turn-wait'">
+        {{ isBlackTurn ? '🎯 轮到你了' : '⏳ 等待中' }}
+      </div>
+      <div class="in-check-badge" v-if="inCheck && viewerColor === 'BLACK'">⚡ 将军！</div>
+      <div class="game-actions">
+        <button class="btn btn-secondary" @click="leaveGame">返回大厅</button>
+      </div>
+    </div>
+
+    <div class="board-container">
+      <canvas id="chessboard" :width="BOARD_W" :height="BOARD_H" @click="onBoardClick"></canvas>
+    </div>
+
+    <div>
+      <div class="card player-panel">
+        <div class="player-avatar avatar-red">{{ (room?.redPlayerName || '?').charAt(0).toUpperCase() }}</div>
+        <div class="player-name">{{ room?.redPlayerName }}</div>
+        <div class="player-tag tag-red">🔴 红方</div>
+        <div class="turn-indicator" :class="isRedTurn ? 'turn-now' : 'turn-wait'">
+          {{ isRedTurn ? '🎯 轮到你了' : '⏳ 等待中' }}
+        </div>
+        <div class="in-check-badge" v-if="inCheck && viewerColor === 'RED'">⚡ 将军！</div>
+
+        <div class="game-actions">
+          <button class="btn btn-secondary" @click="sendUndo" :disabled="gameOver">↩️ 悔棋</button>
+          <button class="btn btn-danger" @click="sendResign" :disabled="gameOver">🏳️ 认输</button>
+          <button class="btn btn-success" @click="sendRematch" :disabled="!gameOver">🔄 再来一局</button>
+        </div>
+      </div>
+
+      <div class="card chat-panel">
+        <h3 style="margin-bottom:10px">💬 聊天</h3>
+        <div class="chat-messages" ref="chatBox">
+          <div v-for="(msg, i) in chatMessages" :key="i" class="chat-msg">
+            <span class="who" :class="msg.whoClass">{{ msg.who }}:</span>
+            <span>{{ msg.text }}</span>
+          </div>
+        </div>
+        <div class="chat-input">
+          <input class="input" v-model="chatText" @keyup.enter="sendChat" placeholder="说点什么..." maxlength="100">
+          <button class="btn btn-primary" @click="sendChat" :disabled="!chatText.trim()">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div v-if="gameOver" class="modal-overlay">
+    <div class="modal">
+      <h2>{{ winnerText }}</h2>
+      <p>{{ gameReasonText }}</p>
+      <div>
+        <button class="btn btn-success" @click="sendRematch">🔄 再来一局</button>
+        <button class="btn btn-secondary" @click="leaveGame">返回大厅</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+const PIECE_NAMES = {
+  red: { K: '帅', A: '仕', E: '相', H: '马', R: '车', C: '炮', P: '兵' },
+  black: { K: '将', A: '士', E: '象', H: '马', R: '车', C: '炮', P: '卒' }
+};
+
+const ROWS = 10, COLS = 9;
+const CELL = 56;
+const PADDING = 28;
+const BOARD_W = PADDING * 2 + CELL * (COLS - 1);
+const BOARD_H = PADDING * 2 + CELL * (ROWS - 1);
+
+const app = createApp({
+  setup() {
+    const myName = ref('');
+    const joinRoomId = ref('');
+    const rooms = ref([]);
+    const inGame = ref(false);
+    const room = ref(null);
+    const pieces = ref([]);
+    const currentTurn = ref('RED');
+    const viewerColor = ref(null);
+
+    const selectedCell = ref(null);
+    const validMoves = ref([]);
+    const gameOver = ref(false);
+    const winner = ref(null);
+    const gameReason = ref('');
+
+    const inCheck = ref(false);
+
+    const chatMessages = ref([]);
+    const chatText = ref('');
+    const chatBox = ref(null);
+
+    let ws = null;
+
+    const isRedTurn = computed(() => inGame.value && viewerColor.value === 'RED' && currentTurn.value === 'RED');
+    const isBlackTurn = computed(() => inGame.value && viewerColor.value === 'BLACK' && currentTurn.value === 'BLACK');
+
+    const winnerText = computed(() => {
+      if (!winner.value) return '🤝 和棋！';
+      const name = winner.value === 'RED'
+        ? room.value?.redPlayerName : room.value?.blackPlayerName;
+      const tag = winner.value === 'RED' ? '🔴 红方' : '⚫ 黑方';
+      return `🏆 ${tag} (${name}) 获胜！`;
+    });
+
+    const gameReasonText = computed(() => {
+      switch (gameReason.value) {
+        case 'CHECKMATE': return '恭喜，你被将死了！';
+        case 'STALEMATE': return '困毙，对方无棋可走！';
+        case 'RESIGN': return '对方已认输。';
+        default: return '对局结束！';
+      }
+    });
+
+    function statusText(s) {
+      return { waiting: '等待中', playing: '对局中', finished: '已结束' }[s] || s;
+    }
+
+    async function api(path, method = 'GET', body = null) {
+      const url = '/api/chess' + path;
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(url, opts);
+      return res.json();
+    }
+
+    async function refreshRooms() {
+      const data = await api('/rooms');
+      rooms.value = data.rooms || [];
+    }
+
+    async function createRoom() {
+      if (!myName.value.trim()) { myName.value = '玩家' + Math.floor(Math.random()*1000); }
+      const data = await api('/rooms', 'POST', { playerName: myName.value.trim() });
+      if (data.success === false) { alert(data.error || '创建失败'); return; }
+      enterGame(data);
+    }
+
+    async function joinRoomById(roomId) {
+      if (!myName.value.trim()) { myName.value = '玩家' + Math.floor(Math.random()*1000); }
+      const data = await api('/rooms/join', 'POST', { roomId, playerName: myName.value.trim() });
+      if (data.success === false) { alert(data.error || '加入失败'); return; }
+      enterGame(data);
+    }
+
+    async function joinRoomInput() {
+      const id = joinRoomId.value.trim().toUpperCase();
+      if (!id) return;
+      await joinRoomById(id);
+      joinRoomId.value = '';
+    }
+
+    function enterGame(data) {
+      if (data.room) room.value = data.room;
+      if (data.board?.pieces) pieces.value = data.board.pieces;
+      if (data.board?.currentTurn) currentTurn.value = data.board.currentTurn;
+      if (data.room?.viewerColor) viewerColor.value = data.room.viewerColor;
+      inGame.value = true;
+      gameOver.value = false;
+      winner.value = null;
+      gameReason.value = '';
+      inCheck.value = false;
+      connectWS(room.value.roomId, myName.value.trim());
+      nextTick(drawBoard);
+    }
+
+    function connectWS(roomId, playerName) {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws/chess?roomId=${roomId}&playerName=${encodeURIComponent(playerName)}`);
+
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          handleWSMessage(msg);
+        } catch (e) { console.warn('WS parse error', e); }
+      };
+      ws.onclose = () => { console.log('WS closed'); };
+      ws.onerror = (e) => { console.warn('WS error', e); };
+    }
+
+    function handleWSMessage(msg) {
+      const t = msg.type;
+      const p = msg.payload;
+      switch (t) {
+        case 'PLAYER_JOINED':
+          if (p?.room) { room.value = { ...room.value, ...p.room }; viewerColor.value = p.room.viewerColor || viewerColor.value; }
+          if (p?.board) { updateBoard(p.board); }
+          addChatMsg('system', `${msg.playerName} 进入了房间`);
+          break;
+        case 'GAME_START':
+          if (p?.board) { updateBoard(p.board); }
+          addChatMsg('system', '⚡ 对局开始！红方先行');
+          break;
+        case 'MOVE':
+          if (p?.board) { updateBoard(p.board); }
+          inCheck.value = !!p?.inCheck;
+          addChatMsg('system', `${msg.playerName} 走了一步`);
+          break;
+        case 'MOVE_INVALID':
+          addChatMsg('system', '⚠️ 那步棋走不了哦');
+          break;
+        case 'GAME_OVER':
+          if (p?.board) { updateBoard(p.board); }
+          winner.value = p?.winner;
+          gameOver.value = true;
+          gameReason.value = p?.reason || '';
+          inCheck.value = false;
+          break;
+        case 'RESIGN':
+          addChatMsg('system', `🏳️ ${msg.playerName} 认输了！`);
+          break;
+        case 'UNDO':
+          if (p?.board) { updateBoard(p.board); }
+          addChatMsg('system', `${msg.playerName} 悔棋了`);
+          break;
+        case 'REMATCH':
+          if (p?.board) { updateBoard(p.board); }
+          gameOver.value = false;
+          winner.value = null;
+          gameReason.value = '';
+          addChatMsg('system', '🔄 新对局开始！');
+          break;
+        case 'PLAYER_LEAVE':
+          addChatMsg('system', `${msg.playerName} 离开了房间`);
+          break;
+        case 'CHAT':
+          addChatMsg(msg.playerName, p?.text || '');
+          break;
+      }
+    }
+
+    function updateBoard(snap) {
+      pieces.value = snap.pieces || [];
+      currentTurn.value = snap.currentTurn || 'RED';
+      gameOver.value = snap.gameOver || false;
+      winner.value = snap.winner;
+      selectedCell.value = null;
+      validMoves.value = [];
+      nextTick(drawBoard);
+    }
+
+    function addChatMsg(who, text) {
+      const whoClass = who === 'system' ? 'system' : (who === room.value?.redPlayerName ? 'red' : 'black');
+      chatMessages.value.push({ who, text, whoClass });
+      nextTick(() => {
+        if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight;
+      });
+    }
+
+    function sendChat() {
+      const text = chatText.value.trim();
+      if (!text || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'CHAT', payload: { text } }));
+      chatText.value = '';
+    }
+
+    function sendResign() {
+      if (!confirm('确定要认输吗？')) return;
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'RESIGN', payload: {} }));
+    }
+
+    function sendUndo() {
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'UNDO', payload: {} }));
+    }
+
+    function sendRematch() {
+      if (!ws || ws.readyState !== 1) return;
+      inCheck.value = false;
+      ws.send(JSON.stringify({ type: 'REMATCH', payload: {} }));
+    }
+
+    function leaveGame() {
+      if (ws) { ws.close(); ws = null; }
+      inGame.value = false;
+      room.value = null;
+      pieces.value = [];
+      viewerColor.value = null;
+      gameOver.value = false;
+      winner.value = null;
+      gameReason.value = '';
+      gameOver.value = false;
+      inCheck.value = false;
+      chatMessages.value = [];
+      selectedCell.value = null;
+      validMoves.value = [];
+      refreshRooms();
+    }
+
+    function cellToPixel(row, col) {
+      return { x: PADDING + col * CELL, y: PADDING + row * CELL };
+    }
+
+    function pixelToCell(x, y) {
+      const col = Math.round((x - PADDING) / CELL);
+      const row = Math.round((y - PADDING) / CELL);
+      if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return null;
+      const { x: cx, y: cy } = cellToPixel(row, col);
+      if (Math.hypot(x - cx, y - cy) > CELL / 2) return null;
+      return { row, col };
+    }
+
+    function getPieceAt(row, col) {
+      return pieces.value.find(p => p.row === row && p.col === col);
+    }
+
+    async function onBoardClick(evt) {
+      if (gameOver.value) return;
+      if (!viewerColor.value) return;
+      if (viewerColor.value !== currentTurn.value) return;
+
+      const canvas = evt.target;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (evt.clientX - rect.left) * scaleX;
+      const y = (evt.clientY - rect.top) * scaleY;
+      const cell = pixelToCell(x, y);
+      if (!cell) return;
+
+      const piece = getPieceAt(cell.row, cell.col);
+
+      if (selectedCell.value) {
+        const from = selectedCell.value;
+        const isValidMove = validMoves.value.some(m => m.row === cell.row && m.col === cell.col);
+
+        if (isValidMove) {
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({
+              type: 'MOVE',
+              payload: { fromRow: from.row, fromCol: from.col, toRow: cell.row, toCol: cell.col }
+            }));
+          }
+          selectedCell.value = null;
+          validMoves.value = [];
+          return;
+        }
+
+        if (piece && piece.color === viewerColor.value) {
+          selectedCell.value = cell;
+          await loadValidMoves(cell.row, cell.col);
+          return;
+        }
+
+        selectedCell.value = null;
+        validMoves.value = [];
+        drawBoard();
+        return;
+      }
+
+      if (piece && piece.color === viewerColor.value) {
+        selectedCell.value = cell;
+        await loadValidMoves(cell.row, cell.col);
+      }
+    }
+
+    async function loadValidMoves(row, col) {
+      try {
+        const data = await api(`/rooms/${room.value.roomId}/valid-moves?row=${row}&col=${col}`);
+        validMoves.value = data.validMoves || [];
+      } catch (e) { validMoves.value = []; }
+      drawBoard();
+    }
+
+    function drawBoard() {
+      const canvas = document.getElementById('chessboard');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#deb887';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#8b4513';
+      ctx.lineWidth = 1.5;
+
+      for (let r = 0; r < ROWS; r++) {
+        const y = PADDING + r * CELL;
+        ctx.beginPath();
+        ctx.moveTo(PADDING, y);
+        ctx.lineTo(PADDING + (COLS - 1) * CELL, y);
+        ctx.stroke();
+      }
+
+      for (let c = 0; c < COLS; c++) {
+        const x = PADDING + c * CELL;
+        if (c === 0 || c === COLS - 1) {
+          ctx.beginPath();
+          ctx.moveTo(x, PADDING);
+          ctx.lineTo(x, PADDING + (ROWS - 1) * CELL);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(x, PADDING);
+          ctx.lineTo(x, PADDING + 4 * CELL);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x, PADDING + 5 * CELL);
+          ctx.lineTo(x, PADDING + 9 * CELL);
+          ctx.stroke();
+        }
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(PADDING + 3 * CELL, PADDING);
+      ctx.lineTo(PADDING + 5 * CELL, PADDING + 2 * CELL);
+      ctx.moveTo(PADDING + 5 * CELL, PADDING);
+      ctx.lineTo(PADDING + 3 * CELL, PADDING + 2 * CELL);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(PADDING + 3 * CELL, PADDING + 7 * CELL);
+      ctx.lineTo(PADDING + 5 * CELL, PADDING + 9 * CELL);
+      ctx.moveTo(PADDING + 5 * CELL, PADDING + 7 * CELL);
+      ctx.lineTo(PADDING + 3 * CELL, PADDING + 9 * CELL);
+      ctx.stroke();
+
+      ctx.save();
+      ctx.fillStyle = '#8b4513';
+      ctx.font = 'bold 22px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const riverY = PADDING + 4.5 * CELL;
+      ctx.fillText('楚 河', PADDING + 1.5 * CELL, riverY);
+      ctx.fillText('漢 界', PADDING + 6.5 * CELL, riverY);
+      ctx.restore();
+
+      ctx.fillStyle = '#8b4513';
+      const markerPositions = [
+        [2,1],[2,7],[7,1],[7,7],
+        [3,0],[3,2],[3,4],[3,6],[3,8],
+        [6,0],[6,2],[6,4],[6,6],[6,8]
+      ];
+      ctx.font = '14px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      markerPositions.forEach(([r,c]) => {
+        const x = PADDING + c * CELL, y = PADDING + r * CELL;
+        const s = 6;
+        ctx.strokeStyle = '#8b4513';
+        ctx.lineWidth = 1;
+        if (c > 0) {
+          ctx.beginPath();
+          ctx.moveTo(x - s, y - s/2); ctx.lineTo(x - s/2, y - s/2); ctx.lineTo(x - s/2, y - s); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x - s, y + s/2); ctx.lineTo(x - s/2, y + s/2); ctx.lineTo(x - s/2, y + s); ctx.stroke();
+        }
+        if (c < COLS - 1) {
+          ctx.beginPath();
+          ctx.moveTo(x + s, y - s/2); ctx.lineTo(x + s/2, y - s/2); ctx.lineTo(x + s/2, y - s); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x + s, y + s/2); ctx.lineTo(x + s/2, y + s/2); ctx.lineTo(x + s/2, y + s); ctx.stroke();
+        }
+      });
+
+      if (selectedCell.value) {
+        const { row, col } = selectedCell.value;
+        const { x, y } = cellToPixel(row, col);
+        ctx.fillStyle = 'rgba(46,213,115,0.35)';
+        ctx.beginPath();
+        ctx.arc(x, y, CELL / 2 - 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      validMoves.value.forEach(m => {
+        const { x, y } = cellToPixel(m.row, m.col);
+        const isCapture = getPieceAt(m.row, m.col);
+        ctx.fillStyle = isCapture ? 'rgba(233,69,96,0.5)' : 'rgba(46,213,115,0.6)';
+        ctx.beginPath();
+        if (isCapture) {
+          ctx.arc(x, y, CELL / 2, 0, Math.PI * 2);
+        } else {
+          ctx.arc(x, y, CELL / 6, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      });
+
+      pieces.value.forEach(p => {
+        const { x, y } = cellToPixel(p.row, p.col);
+        const isRed = p.color === 'RED';
+        const name = isRed
+          ? PIECE_NAMES.red[p.type?.code] || PIECE_NAMES.red[p.type] || p.name
+          : PIECE_NAMES.black[p.type?.code] || PIECE_NAMES.black[p.type] || p.name;
+        drawPiece(ctx, x, y, name, isRed);
+      });
+    }
+
+    function drawPiece(ctx, x, y, name, isRed) {
+      const r = CELL / 2 - 2;
+
+      ctx.beginPath();
+      ctx.fillStyle = '#333';
+      ctx.arc(x, y, r + 1, 0, Math.PI * 2);
+      ctx.fill();
+
+      const grad = ctx.createRadialGradient(x - r/3, y - r/3, 2, x, y, r);
+      grad.addColorStop(0, '#fff8dc');
+      grad.addColorStop(1, '#d2b48c');
+      ctx.beginPath();
+      ctx.fillStyle = grad;
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.strokeStyle = isRed ? '#c0392b' : '#2c3e50';
+      ctx.lineWidth = 2;
+      ctx.arc(x, y, r - 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = isRed ? '#c0392b' : '#2c3e50';
+      ctx.font = `bold ${Math.floor(r * 1.1)}px "KaiTi", "STKaiti", serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name, x, y + 1);
+    }
+
+    watch(inGame, v => { if (v) nextTick(drawBoard); });
+
+    onMounted(() => { refreshRooms(); });
+
+    return {
+      myName, joinRoomId, rooms, inGame, room, pieces, currentTurn, viewerColor,
+      selectedCell, validMoves, gameOver, winner, gameReason, inCheck,
+      chatMessages, chatText, chatBox,
+      BOARD_W, BOARD_H, isRedTurn, isBlackTurn, winnerText, gameReasonText,
+      statusText, refreshRooms, createRoom, joinRoomById, joinRoomInput, onBoardClick,
+      leaveGame, sendChat, sendUndo, sendResign, sendRematch
+    };
+  }
+});
+app.mount('#app');

@@ -34,6 +34,12 @@
             <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
         </dependency>
 
+        <!-- 接口文档 UI(Swagger UI 界面) -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- JavaDoc 运行时读取 -->
         <dependency>
             <groupId>com.github.therapi</groupId>

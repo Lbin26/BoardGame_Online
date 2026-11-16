@@ -180,6 +180,13 @@
                 <version>${springdoc.version}</version>
             </dependency>
 
+            <!-- 接口文档 UI(Swagger UI 界面, 提供 /swagger-ui/index.html) -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
             <!-- JavaDoc 运行时读取 -->
             <dependency>
                 <groupId>com.github.therapi</groupId>
@@ -456,6 +463,13 @@
             <dependency>
                 <groupId>org.dromara</groupId>
                 <artifactId>ruoyi-workflow</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <!--  桌游对战模块  -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-boardgame</artifactId>
                 <version>${revision}</version>
             </dependency>
 
