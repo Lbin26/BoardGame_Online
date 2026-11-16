@@ -29,12 +29,22 @@ function currentUserName(): string {
   return userStore.userInfo?.userName ?? ''
 }
 
+/** 从抛出的错误中提取可展示信息 */
+function errMsg(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 /** 拉取房间列表 */
 async function refreshRooms(): Promise<void> {
-  const data = await chessApi.listRooms()
-  rooms.value = data.rooms ?? []
-  waitingCount.value = data.waitingCount ?? 0
-  playingCount.value = data.playingCount ?? 0
+  try {
+    const data = await chessApi.listRooms()
+    rooms.value = data.rooms ?? []
+    waitingCount.value = data.waitingCount ?? 0
+    playingCount.value = data.playingCount ?? 0
+  } catch (error) {
+    ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试'))
+  }
 }
 
 /** 创建房间：成功即跳转对局页 */
@@ -51,6 +61,8 @@ async function handleCreate(): Promise<void> {
       }
     }
     ElMessage.error(data.error ?? '创建房间失败')
+  } catch (error) {
+    ElMessage.error(errMsg(error, '创建房间失败，请稍后重试'))
   } finally {
     loading.value = false
   }
@@ -70,6 +82,8 @@ async function handleJoin(roomId: string): Promise<void> {
       }
     }
     ElMessage.error(data.error ?? '加入房间失败')
+  } catch (error) {
+    ElMessage.error(errMsg(error, '加入房间失败，请稍后重试'))
   } finally {
     loading.value = false
   }
