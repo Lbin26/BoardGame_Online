@@ -1,5 +1,8 @@
 import { request } from '@/utils/request'
 
+/** 默认 Web/PC 客户端标识（对应后端 sys_client 种子数据） */
+export const CLIENT_ID = 'e5cd7e4891bf95d1d19206ce24a7b32e'
+
 /** 登录请求体 */
 export interface LoginBody {
   clientId: string
@@ -21,13 +24,9 @@ export interface LoginData {
   openid: string
 }
 
-/** 注册请求体 */
-export interface RegisterBody {
-  username: string
-  password: string
-  code?: string
-  uuid?: string
-  userType?: string
+/** 注册请求体（继承登录体，clientId/grantType 必填） */
+export interface RegisterBody extends LoginBody {
+  userType: string
 }
 
 /** 图片验证码返回体 */
