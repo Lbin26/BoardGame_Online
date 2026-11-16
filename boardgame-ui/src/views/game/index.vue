@@ -167,9 +167,10 @@ function handleWSMessage(msg: any): void {
   const p = msg.payload
   switch (t) {
     case 'PLAYER_JOINED':
+      // 注意：后端以 joiningPlayerName 视角 toVO，p.room.viewerColor 是加入者颜色，
+      // 不能据此覆盖接收者自己的 viewerColor（已由 getRoom/joinRoom 正确设置）。
       if (p?.room) {
         room.value = { ...room.value, ...p.room } as RoomVO
-        viewerColor.value = p.room.viewerColor ?? viewerColor.value
       }
       if (p?.board) applyBoard(p.board as BoardSnapshot)
       addChatMsg('system', `${msg.playerName} 进入了房间`)
