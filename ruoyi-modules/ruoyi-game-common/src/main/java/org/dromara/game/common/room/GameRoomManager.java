@@ -1,10 +1,9 @@
-package org.dromara.boardgame.manager;
+package org.dromara.game.common.room;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.game.common.enums.RoomStatus;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
@@ -12,10 +11,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
+/**
+ * 通用房间管理器：建房/查房/自动清理。每个游戏注册自己的实例并注入房间工厂。
+ */
 @Slf4j
-@Component
-public class RoomManager {
+public class GameRoomManager<T extends GameRoom> {
 
     /** 无人在线时的清理宽限：等待中 / 对局中（双方掉线） / 已结束 */
     private static final long WAITING_GRACE_MS = TimeUnit.SECONDS.toMillis(30);
@@ -23,23 +25,28 @@ public class RoomManager {
     private static final long FINISHED_TTL_MS = TimeUnit.SECONDS.toMillis(60);
     private static final long CLEANUP_INTERVAL_SEC = 15;
 
-    private final ConcurrentHashMap<String, ChessRoom> rooms = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, T> rooms = new ConcurrentHashMap<>();
+    private final Function<String, T> roomFactory;
     private ScheduledExecutorService scheduler;
 
-    public ChessRoom createRoom(String playerName) {
+    public GameRoomManager(Function<String, T> roomFactory) {
+        this.roomFactory = roomFactory;
+    }
+
+    public T createRoom(String playerName) {
         String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-        ChessRoom room = new ChessRoom(roomId);
+        T room = roomFactory.apply(roomId);
         rooms.put(roomId, room);
         log.info("创建房间: {} by {}（座位待选）", roomId, playerName);
         return room;
     }
 
-    public ChessRoom getRoom(String roomId) {
+    public T getRoom(String roomId) {
         return rooms.get(roomId);
     }
 
-    public ChessRoom removeRoom(String roomId) {
-        ChessRoom removed = rooms.remove(roomId);
+    public T removeRoom(String roomId) {
+        T removed = rooms.remove(roomId);
         if (removed != null) log.info("移除房间: {}", roomId);
         return removed;
     }
@@ -80,7 +87,7 @@ public class RoomManager {
      */
     void cleanup(long now) {
         int removed = 0;
-        for (ChessRoom room : rooms.values()) {
+        for (T room : rooms.values()) {
             if (room.hasConnectedPlayers()) continue;
             long idle = now - room.getLastActivityAt();
             long grace = switch (room.getStatus()) {

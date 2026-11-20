@@ -10,26 +10,19 @@ import org.dromara.boardgame.engine.ChessEngine;
 import org.dromara.boardgame.engine.ChessPiece;
 import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.game.common.enums.RoomStatus;
+import org.dromara.game.common.room.GameRoom;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class ChessRoom {
+public class ChessRoom extends GameRoom {
 
     /** 选座结果 */
     public enum SeatResult { SUCCESS, NOT_WAITING, SEAT_TAKEN }
 
     @Getter
-    private final String roomId;
-
-    @Getter
     private final ChessEngine engine;
-
-    @Getter
-    private volatile RoomStatus status;
 
     @Getter
     private String redPlayerName;
@@ -38,41 +31,23 @@ public class ChessRoom {
     private String blackPlayerName;
 
     @Getter
-    private volatile long lastActivityAt;
-
-    @Getter
     private volatile boolean redConnected;
 
     @Getter
     private volatile boolean blackConnected;
 
-    /** 当前在线玩家名（含旁观者），用于清理宽限判定 */
-    private final Set<String> connectedPlayers = ConcurrentHashMap.newKeySet();
-
     public ChessRoom(String roomId) {
-        this.roomId = roomId;
+        super(roomId);
         this.engine = new ChessEngine();
-        this.status = RoomStatus.WAITING;
         this.redPlayerName = null;
         this.blackPlayerName = null;
-        this.lastActivityAt = System.currentTimeMillis();
     }
 
-    private void touch() {
-        this.lastActivityAt = System.currentTimeMillis();
-    }
-
-    public synchronized void markConnected(String playerName, boolean connected) {
-        if (connected) connectedPlayers.add(playerName);
-        else connectedPlayers.remove(playerName);
+    @Override
+    protected void onConnectedChanged(String playerName, boolean connected) {
         PlayerColor color = getPlayerColor(playerName);
         if (color == PlayerColor.RED) this.redConnected = connected;
         else if (color == PlayerColor.BLACK) this.blackConnected = connected;
-        touch();
-    }
-
-    public boolean hasConnectedPlayers() {
-        return !connectedPlayers.isEmpty();
     }
 
     /**
@@ -196,7 +171,7 @@ public class ChessRoom {
 
     public RoomVO toVO(String viewerName) {
         PlayerColor viewerColor = getPlayerColor(viewerName);
-        return new RoomVO(roomId, redPlayerName, blackPlayerName, status, viewerColor);
+        return new RoomVO(getRoomId(), redPlayerName, blackPlayerName, status, viewerColor);
     }
 
     public boolean isInCheck() {

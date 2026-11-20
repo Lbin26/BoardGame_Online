@@ -3,7 +3,7 @@ package org.dromara.boardgame.handler;
 import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.game.common.enums.RoomStatus;
 import org.dromara.boardgame.manager.ChessRoom;
-import org.dromara.boardgame.manager.RoomManager;
+import org.dromara.game.common.room.GameRoomManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,13 +23,13 @@ import static org.mockito.Mockito.*;
 /** WS 连接语义：陌生人=旁观者、自身视角同步、广播中立、重复连接替换 */
 class ChessWebSocketHandlerTest {
 
-    private RoomManager roomManager;
+    private GameRoomManager<ChessRoom> roomManager;
     private ChessWebSocketHandler handler;
     private ChessRoom room;
 
     @BeforeEach
     void setUp() {
-        roomManager = new RoomManager();
+        roomManager = new GameRoomManager<>(ChessRoom::new);
         handler = new ChessWebSocketHandler(roomManager);
         room = roomManager.createRoom("creator");
     }

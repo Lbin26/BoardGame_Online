@@ -1,35 +1,45 @@
-package org.dromara.boardgame.manager;
+package org.dromara.game.common.room;
 
-import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.game.common.enums.RoomStatus;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 清理规则测试：仅无人在线且超宽限才移除；刷新页面（断线重连）不误杀 */
-class RoomManagerCleanupTest {
+class GameRoomManagerCleanupTest {
 
     private static final long WAITING_GRACE = 30_000;
     private static final long PLAYING_GRACE = 120_000;
     private static final long FINISHED_GRACE = 60_000;
 
-    private final RoomManager manager = new RoomManager();
+    /** 最小 GameRoom 子类：takeSeat 进 PLAYING，resign 进 FINISHED，驱动各状态宽限分支 */
+    static class TestRoom extends GameRoom {
+        TestRoom(String roomId) { super(roomId); }
+        void takeSeat(String playerName) {
+            this.status = RoomStatus.PLAYING;
+            touch();
+        }
+        void resign() {
+            this.status = RoomStatus.FINISHED;
+            touch();
+        }
+    }
 
-    private ChessRoom create() {
+    private final GameRoomManager<TestRoom> manager = new GameRoomManager<>(TestRoom::new);
+
+    private TestRoom create() {
         return manager.createRoom("creator");
     }
 
     @Test
-    void createRoomNoLongerSeatsCreator() {
-        ChessRoom room = create();
-        assertNull(room.getRedPlayerName());
-        assertNull(room.getBlackPlayerName());
+    void createdRoomIsWaiting() {
+        TestRoom room = create();
         assertEquals(RoomStatus.WAITING, room.getStatus());
     }
 
     @Test
     void waitingRoomRemovedOnlyAfterGraceWithNobodyConnected() {
-        ChessRoom room = create();
+        TestRoom room = create();
         long base = room.getLastActivityAt();
         manager.cleanup(base + WAITING_GRACE - 1);
         assertNotNull(manager.getRoom(room.getRoomId()));
@@ -39,7 +49,7 @@ class RoomManagerCleanupTest {
 
     @Test
     void refreshReconnectKeepsWaitingRoomAlive() {
-        ChessRoom room = create();
+        TestRoom room = create();
         room.markConnected("creator", true);
         room.markConnected("creator", false); // 刷新页面断开
         room.markConnected("creator", true); // 数秒后重连
@@ -49,7 +59,7 @@ class RoomManagerCleanupTest {
 
     @Test
     void spectatorOnlyPresenceKeepsWaitingRoom() {
-        ChessRoom room = create();
+        TestRoom room = create();
         room.markConnected("watcher", true);
         manager.cleanup(room.getLastActivityAt() + WAITING_GRACE + 1);
         assertNotNull(manager.getRoom(room.getRoomId()));
@@ -57,9 +67,9 @@ class RoomManagerCleanupTest {
 
     @Test
     void abandonedPlayingRoomRemovedAfterLongerGrace() {
-        ChessRoom room = create();
-        room.takeSeat("alice", PlayerColor.RED);
-        room.takeSeat("bob", PlayerColor.BLACK);
+        TestRoom room = create();
+        room.takeSeat("alice");
+        room.takeSeat("bob");
         room.markConnected("alice", true);
         room.markConnected("bob", true);
         room.markConnected("alice", false);
@@ -73,9 +83,9 @@ class RoomManagerCleanupTest {
 
     @Test
     void playingRoomWithOneConnectedSurvives() {
-        ChessRoom room = create();
-        room.takeSeat("alice", PlayerColor.RED);
-        room.takeSeat("bob", PlayerColor.BLACK);
+        TestRoom room = create();
+        room.takeSeat("alice");
+        room.takeSeat("bob");
         room.markConnected("alice", true);
         manager.cleanup(room.getLastActivityAt() + PLAYING_GRACE + 1);
         assertNotNull(manager.getRoom(room.getRoomId()));
@@ -83,10 +93,10 @@ class RoomManagerCleanupTest {
 
     @Test
     void finishedRoomRemovedAfterTtlWhenNobodyConnected() {
-        ChessRoom room = create();
-        room.takeSeat("alice", PlayerColor.RED);
-        room.takeSeat("bob", PlayerColor.BLACK);
-        room.resign("alice");
+        TestRoom room = create();
+        room.takeSeat("alice");
+        room.takeSeat("bob");
+        room.resign();
         assertEquals(RoomStatus.FINISHED, room.getStatus());
         long base = room.getLastActivityAt();
         manager.cleanup(base + FINISHED_GRACE - 1);
@@ -97,10 +107,10 @@ class RoomManagerCleanupTest {
 
     @Test
     void finishedRoomWithConnectedPlayerSurvivesTtl() {
-        ChessRoom room = create();
-        room.takeSeat("alice", PlayerColor.RED);
-        room.takeSeat("bob", PlayerColor.BLACK);
-        room.resign("alice");
+        TestRoom room = create();
+        room.takeSeat("alice");
+        room.takeSeat("bob");
+        room.resign();
         room.markConnected("alice", true);
         manager.cleanup(room.getLastActivityAt() + FINISHED_GRACE + 1);
         assertNotNull(manager.getRoom(room.getRoomId()));

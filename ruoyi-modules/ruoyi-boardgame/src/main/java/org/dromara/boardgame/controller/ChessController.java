@@ -8,7 +8,7 @@ import org.dromara.game.common.domain.vo.RoomVO;
 import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.boardgame.handler.ChessWebSocketHandler;
 import org.dromara.boardgame.manager.ChessRoom;
-import org.dromara.boardgame.manager.RoomManager;
+import org.dromara.game.common.room.GameRoomManager;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChessController {
 
-    private final RoomManager roomManager;
+    private final GameRoomManager<ChessRoom> roomManager;
     private final ChessWebSocketHandler webSocketHandler;
 
     @PostMapping("/rooms")

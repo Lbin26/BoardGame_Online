@@ -6,7 +6,7 @@ import org.dromara.game.common.domain.vo.RoomVO;
 import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.boardgame.handler.ChessWebSocketHandler;
 import org.dromara.boardgame.manager.ChessRoom;
-import org.dromara.boardgame.manager.RoomManager;
+import org.dromara.game.common.room.GameRoomManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,13 +19,13 @@ import static org.mockito.Mockito.*;
 /** 选座/起身接口校验与竞争重同步契约 */
 class ChessControllerSeatTest {
 
-    private RoomManager roomManager;
+    private GameRoomManager<ChessRoom> roomManager;
     private ChessWebSocketHandler handler;
     private ChessController controller;
 
     @BeforeEach
     void setUp() {
-        roomManager = new RoomManager();
+        roomManager = new GameRoomManager<>(ChessRoom::new);
         handler = mock(ChessWebSocketHandler.class);
         controller = new ChessController(roomManager, handler);
     }

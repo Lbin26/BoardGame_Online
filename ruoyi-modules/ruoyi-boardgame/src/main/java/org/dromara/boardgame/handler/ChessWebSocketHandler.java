@@ -11,7 +11,7 @@ import org.dromara.game.common.enums.GameMessageType;
 import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.game.common.enums.RoomStatus;
 import org.dromara.boardgame.manager.ChessRoom;
-import org.dromara.boardgame.manager.RoomManager;
+import org.dromara.game.common.room.GameRoomManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class ChessWebSocketHandler extends TextWebSocketHandler {
 
-    private final RoomManager roomManager;
+    private final GameRoomManager<ChessRoom> roomManager;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
