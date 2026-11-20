@@ -26,7 +26,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => mocks.route,
 }))
 vi.mock('@/store/user', () => ({ useUserStore: () => mocks.store }))
-vi.mock('@/api/chess', () => mocks.api)
+vi.mock('@/api/xiangqi', () => mocks.api)
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)

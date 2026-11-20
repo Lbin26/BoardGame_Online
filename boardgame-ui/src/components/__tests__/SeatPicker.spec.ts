@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 
 import SeatPicker from '@/components/SeatPicker.vue'
-import type { RoomInfo } from '@/api/chess'
+import type { RoomInfo } from '@/api/xiangqi'
 
 function room(over: Partial<RoomInfo> = {}): RoomInfo {
   return {

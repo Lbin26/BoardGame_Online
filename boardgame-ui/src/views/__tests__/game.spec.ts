@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import ElementPlus, { ElMessage } from 'element-plus'
 
 import Game from '@/views/game/index.vue'
-import type { RoomInfo } from '@/api/chess'
+import type { RoomInfo } from '@/api/xiangqi'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -53,7 +53,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
 }))
 vi.mock('@/store/user', () => ({ useUserStore: () => mocks.store }))
-vi.mock('@/api/chess', () => mocks.api)
+vi.mock('@/api/xiangqi', () => mocks.api)
 vi.mock('@/utils/clipboard', () => ({ copyText: mocks.copyText }))
 
 enableAutoUnmount(afterEach)

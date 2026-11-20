@@ -23,7 +23,7 @@
         <module>ruoyi-workflow</module>
         <module>ruoyi-ai</module>
         <module>ruoyi-game-common</module>
-        <module>ruoyi-boardgame</module>
+        <module>ruoyi-xiangqi</module>
     </modules>
 
 </project>

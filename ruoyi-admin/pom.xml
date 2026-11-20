@@ -107,7 +107,8 @@
         <!--  桌游对战模块  -->
         <dependency>
             <groupId>org.dromara</groupId>
-            <artifactId>ruoyi-boardgame</artifactId>
+            <artifactId>ruoyi-xiangqi</artifactId>
+            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Boot Admin 客户端 -->
