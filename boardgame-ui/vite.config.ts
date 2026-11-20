@@ -4,9 +4,11 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+import { designUrlPlugin } from './vite-plugin-design-url'
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), designUrlPlugin()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -29,6 +31,10 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,
+      },
+      '/design-api': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
       },
     },
   },

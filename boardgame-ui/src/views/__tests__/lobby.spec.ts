@@ -247,6 +247,35 @@ describe('lobby levels', () => {
   })
 })
 
+describe('lobby design entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.store.fetchProfile.mockResolvedValue(undefined)
+    mocks.api.listRooms.mockResolvedValue(emptyList)
+  })
+
+  it('level 0 shows the design assistant card and click pushes /design', async () => {
+    const w = mountLobby()
+    await flushPromises()
+    const card = w.find('.design-entry')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('桌游设计助手')
+    expect(card.text()).toContain('样本 · 机制 · 数值模拟工作台')
+    await card.trigger('click')
+    expect(mocks.push).toHaveBeenCalledWith('/design')
+  })
+
+  it('design entry is not rendered at level 1 or 2', async () => {
+    for (const q of [{ zone: 'abstract' }, L2]) {
+      const w = mountLobby(q)
+      await flushPromises()
+      expect(w.find('.design-entry').exists()).toBe(false)
+      w.unmount()
+    }
+  })
+})
+
 describe('lobby polling lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -345,9 +374,48 @@ describe('lobby auto refresh', () => {
     mocks.api.listRooms.mockResolvedValueOnce(emptyList).mockRejectedValue(new Error('network'))
     const wrapper = mountLobby(L2)
     await vi.advanceTimersByTimeAsync(0)
-    await buttonByText(wrapper, '🔄 刷新')!.trigger('click')
+    await buttonByText(wrapper, '刷新')!.trigger('click')
     await vi.advanceTimersByTimeAsync(0)
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+})
+
+describe('lobby list states', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.store.fetchProfile.mockResolvedValue(undefined)
+    mocks.api.listRooms.mockResolvedValue(emptyList)
+  })
+
+  it('manual refresh failure shows inline error panel; retry recovers the list', async () => {
+    const errorSpy = vi.spyOn(ElMessage, 'error').mockImplementation(() => ({}) as any)
+    mocks.api.listRooms
+      .mockResolvedValueOnce(emptyList)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(oneWaiting)
+    const wrapper = mountLobby(L2)
+    await flushPromises()
+    await buttonByText(wrapper, '刷新')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.list-error').exists()).toBe(true)
+    expect(errorSpy).toHaveBeenCalled()
+    await buttonByText(wrapper, '重试')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.list-error').exists()).toBe(false)
+    expect(wrapper.text()).toContain('ABC123')
+    errorSpy.mockRestore()
+  })
+
+  it('empty state CTA creates a room and navigates', async () => {
+    mocks.api.createRoom.mockResolvedValue({ success: true, room: { roomId: 'NEW001' } })
+    const wrapper = mountLobby(L2)
+    await flushPromises()
+    expect(wrapper.find('.empty').exists()).toBe(true)
+    await wrapper.find('.empty button').trigger('click')
+    await flushPromises()
+    expect(mocks.api.createRoom).toHaveBeenCalledWith('alice')
+    expect(mocks.push).toHaveBeenCalledWith('/game/NEW001')
   })
 })

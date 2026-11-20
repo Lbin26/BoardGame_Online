@@ -1,0 +1,185 @@
+# 机制词汇单一事实来源：catalog.ts 全部标签 + 设计扩展机制
+# 每个机制声明归属分区（可多区）；游戏归区按主导机制（沿用 import-boardgame 判例）
+zones: [party, family, strategy, card, narrative, abstract, heavy]
+mechanisms:
+  # —— 轻策/派对区 ——
+  - key: simultaneous-action
+    name: 同时行动
+    nameEn: Simultaneous Action Selection
+    zones: [party]
+  - key: reaction
+    name: 反应
+    nameEn: Reaction / Real-time
+    zones: [party]
+  - key: word-guessing
+    name: 猜词
+    nameEn: Word Guessing
+    zones: [party]
+  - key: bluffing
+    name: 吹牛
+    nameEn: Bluffing
+    zones: [party]
+  # —— 家庭/聚会区 ——
+  - key: set-collection
+    name: 成套收集
+    nameEn: Set Collection
+    zones: [family, card]
+  - key: tile-placement
+    name: 板块放置
+    nameEn: Tile Placement
+    zones: [family]
+  - key: light-dice-strategy
+    name: 骰子轻策
+    nameEn: Light Dice Strategy
+    zones: [family]
+  - key: trading-negotiation
+    name: 交易谈判
+    nameEn: Trading & Negotiation
+    zones: [family]
+  # —— 策略核心区 ——
+  - key: worker-placement
+    name: 工人放置
+    nameEn: Worker Placement
+    zones: [strategy]
+  - key: engine-building
+    name: 引擎构建
+    nameEn: Engine Building
+    zones: [strategy, card]
+  - key: area-control
+    name: 区域控制
+    nameEn: Area Control / Influence
+    zones: [strategy]
+  - key: route-building
+    name: 路线构建
+    nameEn: Route / Network Building
+    zones: [strategy]
+  - key: action-point-allocation
+    name: 行动点分配
+    nameEn: Action Point Allocation
+    zones: [strategy]
+  # —— 卡牌区 ——
+  - key: hand-management
+    name: 手牌管理
+    nameEn: Hand Management
+    zones: [card, heavy]
+    aliases: [手牌管理（轻卡驱）]
+  - key: deck-building
+    name: 牌库构建
+    nameEn: Deck Building
+    zones: [card]
+  - key: card-driven
+    name: 卡牌驱动
+    nameEn: Card Driven
+    zones: [card]
+  - key: drafting
+    name: 轮抽
+    nameEn: Drafting
+    zones: [card, party]
+    aliases: [轮抽轻量版]
+  - key: multi-use-cards
+    name: 多用途卡牌
+    nameEn: Multi-use Cards
+    zones: [card]
+  # —— 美式/叙事区 ——
+  - key: cooperation
+    name: 合作
+    nameEn: Cooperative Play
+    zones: [narrative]
+  - key: legacy
+    name: 传承
+    nameEn: Legacy
+    zones: [narrative]
+  - key: narrative
+    name: 叙事
+    nameEn: Narrative / Storytelling
+    zones: [narrative]
+  - key: hidden-roles
+    name: 隐藏身份
+    nameEn: Hidden Roles
+    zones: [narrative]
+  - key: combat-resolution
+    name: 战斗结算
+    nameEn: Combat Resolution
+    zones: [narrative]
+  # —— 抽象/双人区 ——
+  - key: abstract-chess
+    name: 抽象棋
+    nameEn: Abstract Strategy
+    zones: [abstract]
+  - key: pattern-building
+    name: 模式构建
+    nameEn: Pattern Building
+    zones: [abstract]
+  - key: logical-deduction
+    name: 逻辑推理
+    nameEn: Logical Deduction
+    zones: [abstract, narrative]
+    aliases: [推理/演绎]
+  # —— 硬核/重策区 ——
+  - key: heavy-composite
+    name: 资源管理+引擎+路线+推轨的复合体
+    nameEn: Heavy Composite (Resource + Engine + Route + Track)
+    zones: [heavy]
+  # —— 游戏级标签（不在区词汇中的） ——
+  - key: dice-driven
+    name: 骰子驱动
+    nameEn: Dice Driven
+    zones: [narrative, family]
+  - key: card-assist
+    name: 卡牌辅助
+    nameEn: Card-assisted Abilities
+    zones: [narrative, card]
+  - key: voting
+    name: 投票
+    nameEn: Voting
+    zones: [narrative, party]
+  - key: network-building
+    name: 网络构建
+    nameEn: Network Building
+    zones: [heavy, strategy]
+  - key: economic-management
+    name: 经济/资源管理
+    nameEn: Economic / Resource Management
+    zones: [heavy, strategy]
+  # —— 设计扩展机制 ——
+  - key: auction
+    name: 拍卖竞价
+    nameEn: Auction / Bidding
+    zones: [strategy, heavy]
+  - key: secret-objectives
+    name: 秘密目标
+    nameEn: Secret Objectives
+    zones: [strategy, card, heavy]
+  - key: progress-track
+    name: 进度轨
+    nameEn: Progress Track
+    zones: [strategy, heavy]
+  - key: dice-placement
+    name: 骰子放置
+    nameEn: Dice Placement
+    zones: [strategy, family]
+  - key: pick-up-and-deliver
+    name: 拾取运送
+    nameEn: Pick-up and Deliver
+    zones: [strategy, heavy]
+  - key: stock-holding
+    name: 股份持有
+    nameEn: Stock Holding
+    zones: [heavy]
+  - key: time-track
+    name: 时间轨
+    nameEn: Time Track
+    zones: [strategy, heavy]
+  - key: variable-player-powers
+    name: 可变玩家能力
+    nameEn: Variable Player Powers
+    zones: [narrative, strategy]
+    aliases: [角色能力（不对称）]
+  - key: grid-movement
+    name: 网格移动
+    nameEn: Grid Movement
+    zones: [abstract, strategy]
+  - key: push-your-luck
+    name: 押注博弈
+    nameEn: Push Your Luck
+    zones: [family, party, narrative]

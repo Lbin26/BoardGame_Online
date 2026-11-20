@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DiceGo · 落子,即在线。</title>
+<link rel="stylesheet" href="assets/fonts/zcool-qingke-huangyou/index.css">
+<style>
+/* ============ Design tokens(声明于 Checkpoint 1,2026-11-20 用户确认) ============ */
+:root{
+  --bg:#1a1a2e;            /* 应用现有 --bg-base */
+  --bg-2:#16213e;          /* 应用现有渐变终点 */
+  --panel:#20203a;         /* 由 bg 提亮派生 */
+  --accent:#e94560;        /* 应用现有 --color-primary */
+  --accent-soft:oklch(from var(--accent) l c h / .14);
+  --ink:#f2f0eb;
+  --muted:#9aa0b4;
+  --line:oklch(from var(--ink) l c h / .16);
+  --board-bg:#141c33;      /* 夜漆棋盘 */
+  --board-line:oklch(from var(--ink) l c h / .42);
+  --piece-black:#232338;
+  --radius:6px;
+  --shadow-1:0 2px 8px oklch(0 0 0 / .35);
+  --shadow-2:0 24px 60px -18px oklch(0 0 0 / .6);
+  --ease:cubic-bezier(.22,1,.36,1);
+  --font-display:'ZCOOL QingKe HuangYou', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body:'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  --gap-section:clamp(96px, 12vw, 160px);
+}
+/* Tweaks:字标蓝橙 accent */
+:root[data-accent="logo"]{
+  --accent:#2f9fe0;
+  --accent-2:#f5821f;
+}
+/* Tweaks:暖木棋盘(色相由品牌红 oklch 派生,不新造色相) */
+:root[data-board="wood"]{
+  --board-bg:oklch(from var(--accent) .82 .06 calc(h + 55));
+  --board-line:oklch(from var(--accent) .38 .08 calc(h + 40));
+  --piece-black:#2b2118;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{animation:none!important; transition:none!important} }
+body{
+  background:linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%) fixed;
+  color:var(--ink);
+  font-family:var(--font-body);
+  font-size:17px; line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.display{font-family:var(--font-display); font-weight:400; line-height:1.15; text-wrap:balance}
+p{text-wrap:pretty}
+a{color:inherit; text-decoration:none}
+.wrap{max-width:1180px; margin:0 auto; padding:0 clamp(20px, 4vw, 48px)}
+.eyebrow{font-size:13px; letter-spacing:.35em; color:var(--muted); text-transform:uppercase}
+.btn{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:14px 28px; border-radius:var(--radius);
+  font-size:16px; font-weight:600; cursor:pointer; border:1px solid transparent;
+  transition:transform .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease);
+}
+.btn-primary{background:var(--accent); color:#fff; box-shadow:var(--shadow-1)}
+.btn-primary:hover{transform:translateY(-2px); box-shadow:var(--shadow-2)}
+.btn-primary:active{transform:translateY(0)}
+.btn-ghost{border-color:var(--line); color:var(--ink)}
+.btn-ghost:hover{border-color:var(--accent); color:var(--accent)}
+.btn:focus-visible, a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+.ph{ /* 占位标记:真实素材待补 */
+  display:inline-grid; place-items:center;
+  border:1px dashed var(--muted); color:var(--muted);
+  font-size:12px; border-radius:4px; padding:2px 8px;
+}
+
+/* ============ Nav ============ */
+nav{position:sticky; top:0; z-index:40; backdrop-filter:blur(14px); background:oklch(from var(--bg) l c h / .78); border-bottom:1px solid var(--line)}
+.nav-in{display:flex; align-items:center; gap:32px; height:72px}
+.nav-logo{height:30px; width:auto; display:block}
+.nav-links{display:flex; gap:28px; margin-left:auto; font-size:15px; color:var(--muted)}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{padding:9px 20px; font-size:14px}
+@media (max-width:760px){ .nav-links{display:none} .nav-cta{margin-left:auto} }
+
+/* ============ Hero ============ */
+.hero{padding:clamp(56px,8vw,104px) 0 var(--gap-section)}
+.hero-grid{display:grid; grid-template-columns:1.02fr .98fr; gap:clamp(40px,5vw,72px); align-items:center}
+.hero h1{font-size:clamp(48px, 6.4vw, 88px); margin:18px 0 22px; letter-spacing:.02em}
+.hero h1 em{font-style:normal; color:var(--accent)}
+.hero-sub{color:var(--muted); font-size:clamp(16px,1.4vw,19px); max-width:34em}
+.hero-cta{display:flex; gap:16px; margin-top:36px; flex-wrap:wrap}
+.hero-note{margin-top:20px; font-size:13px; color:var(--muted)}
+@media (max-width:900px){ .hero-grid{grid-template-columns:1fr} .board-side{max-width:440px; margin:0 auto; width:100%} }
+
+/* ---- 棋盘 mock(界面演示,元素来自真实 game 页) ---- */
+.board-side{display:flex; flex-direction:column; gap:14px}
+.seat{display:flex; align-items:center; gap:12px; font-size:14px; color:var(--muted)}
+.seat .avatar{width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-size:14px; color:#fff; background:var(--piece-black); border:1px solid var(--line)}
+.seat.red .avatar{background:var(--accent)}
+.seat .clock{margin-left:auto; font-variant-numeric:tabular-nums; letter-spacing:.08em}
+.turn-chip{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--ink); background:var(--accent-soft); border:1px solid oklch(from var(--accent) l c h / .4); padding:4px 12px; border-radius:999px}
+.turn-chip .dot{width:7px; height:7px; border-radius:50%; background:var(--accent)}
+.board{
+  position:relative; aspect-ratio:460/510; container-type:inline-size;
+  background:var(--board-bg); border-radius:var(--radius); box-shadow:var(--shadow-2);
+  border:1px solid var(--line);
+}
+.board svg{position:absolute; inset:0; width:100%; height:100%; display:block}
+.board svg text{font-family:var(--font-display); fill:var(--board-line)}
+.piece{
+  position:absolute; width:9.6%; aspect-ratio:1; transform:translate(-50%,-50%);
+  border-radius:50%; display:grid; place-items:center;
+  font-family:var(--font-display); font-size:5.4cqw; line-height:1;
+  box-shadow:var(--shadow-1); cursor:default;
+  transition:transform .25s var(--ease);
+}
+.piece:hover{transform:translate(-50%,-50%) scale(1.08)}
+.piece.red{background:var(--accent); color:#fff; border:1px solid oklch(from var(--accent) calc(l + .18) c h)}
+.piece.black{background:var(--piece-black); color:var(--ink); border:1px solid var(--board-line)}
+.piece.last{outline:2px solid oklch(from var(--accent) l c h / .85); outline-offset:3px}
+.piece.ghost{background:transparent; border:1px dashed var(--board-line); color:transparent; box-shadow:none}
+.chat{display:flex; flex-direction:column; gap:8px; font-size:13px}
+.chat .bubble{align-self:flex-start; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:6px 12px; color:var(--muted)}
+.chat .bubble.me{align-self:flex-end; color:var(--ink); border-color:oklch(from var(--accent) l c h / .4)}
+.chat .input{border:1px dashed var(--line); border-radius:var(--radius); padding:8px 12px; color:var(--muted); font-size:13px}
+
+/* ============ Sections ============ */
+section{padding-bottom:var(--gap-section)}
+.sec-head{display:flex; align-items:baseline; gap:24px; margin-bottom:clamp(32px,4vw,56px)}
+.sec-head h2{font-size:clamp(32px,3.6vw,52px)}
+.sec-head .idx{font-family:var(--font-display); color:var(--accent); font-size:clamp(20px,2vw,28px)}
+.sec-head .rule{flex:1; height:1px; background:var(--line)}
+
+/* lineup:非均匀三卡 */
+.lineup{display:grid; grid-template-columns:1.6fr 1fr 1fr; gap:20px}
+.game-card{border:1px solid var(--line); border-radius:var(--radius); padding:28px; background:oklch(from var(--panel) l c h / .6); display:flex; flex-direction:column; gap:12px; transition:border-color .3s var(--ease), transform .3s var(--ease)}
+.game-card:hover{border-color:oklch(from var(--accent) l c h / .55); transform:translateY(-3px)}
+.game-card .glyph{width:56px; height:56px; border-radius:50%; display:grid; place-items:center; font-family:var(--font-display); font-size:28px}
+.game-card.playable .glyph{background:var(--accent); color:#fff; box-shadow:var(--shadow-1)}
+.game-card.soon .glyph{background:var(--piece-black); color:var(--muted); border:1px solid var(--line)}
+.game-card h3{font-size:26px}
+.game-card p{color:var(--muted); font-size:15px}
+.badge{align-self:flex-start; font-size:12px; letter-spacing:.12em; padding:3px 10px; border-radius:999px}
+.badge.live{background:var(--accent-soft); color:var(--accent); border:1px solid oklch(from var(--accent) l c h / .4)}
+.badge.soon{color:var(--muted); border:1px dashed var(--muted)}
+.game-card.soon{opacity:.72}
+@media (max-width:860px){ .lineup{grid-template-columns:1fr} }
+
+/* flow:房间号 → 对局 叙事 */
+.flow{display:grid; grid-template-columns:repeat(4,1fr); gap:0; counter-reset:step}
+.step{position:relative; padding:0 28px 0 0}
+.step + .step{padding-left:28px; border-left:1px solid var(--line)}
+.step .num{font-family:var(--font-display); font-size:clamp(40px,4.4vw,64px); color:oklch(from var(--accent) l c h / .9); line-height:1}
+.step h3{font-size:22px; margin:14px 0 8px}
+.step p{color:var(--muted); font-size:15px}
+.step .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px}
+.chip{font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:3px 10px}
+.roomcode{display:inline-block; font-variant-numeric:tabular-nums; letter-spacing:.22em; color:var(--accent); border:1px dashed oklch(from var(--accent) l c h / .5); border-radius:var(--radius); padding:2px 10px; font-size:15px}
+@media (max-width:860px){ .flow{grid-template-columns:1fr 1fr; gap:32px 0} .step:nth-child(3){border-left:none; padding-left:0} }
+@media (max-width:560px){ .flow{grid-template-columns:1fr} .step + .step{border-left:none; padding-left:0} }
+
+/* closing */
+.closing{text-align:center; padding:clamp(64px,8vw,120px) 0}
+.closing h2{font-size:clamp(40px,5.6vw,76px); margin-bottom:16px}
+.closing p{color:var(--muted); margin-bottom:36px}
+footer{border-top:1px solid var(--line); padding:32px 0 40px; font-size:13px; color:var(--muted)}
+.foot-in{display:flex; align-items:center; gap:20px; flex-wrap:wrap}
+.foot-in img{height:20px; opacity:.8}
+.foot-in .stack{margin-left:auto}
+@media (max-width:760px){ .foot-in .stack{margin-left:0} }
+
+/* ============ Tweaks ============ */
+.tweaks{position:fixed; right:20px; bottom:20px; z-index:60; font-size:13px}
+.tweaks-toggle{background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:999px; padding:8px 16px; cursor:pointer; font-size:13px; box-shadow:var(--shadow-1)}
+.tweaks-panel{display:none; margin-bottom:10px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; width:230px; box-shadow:var(--shadow-2)}
+.tweaks.open .tweaks-panel{display:block}
+.tweaks-panel h4{font-size:12px; letter-spacing:.2em; color:var(--muted); margin-bottom:12px; font-weight:600}
+.tweak-row{margin-bottom:12px}
+.tweak-row label{display:block; color:var(--muted); margin-bottom:6px; font-size:12px}
+.seg{display:flex; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+.seg button{flex:1; background:transparent; border:none; color:var(--muted); padding:6px 4px; cursor:pointer; font-size:12px; font-family:var(--font-body)}
+.seg button[aria-pressed="true"]{background:var(--accent); color:#fff}
+.tweaks .ver{color:var(--muted); font-size:11px; margin-top:4px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <img class="nav-logo" src="assets/dicego-brand/logo-wordmark.png" alt="DiceGo">
+    <div class="nav-links">
+      <a href="#games">棋种</a>
+      <a href="#play">对弈体验</a>
+      <a href="#join">开始</a>
+    </div>
+    <a class="btn btn-primary nav-cta" href="#join">进入大厅</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">在线棋类对弈平台</div>
+      <h1>落子,<em>即在线</em>。</h1>
+      <p class="hero-sub">创建一个房间,把房间号发给朋友——下一秒,楚河汉界在两块屏幕之间展开。实时走子、观战、对局聊天,都在浏览器里。</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#join">进入大厅</a>
+        <a class="btn btn-ghost" href="#play">看一局怎么下</a>
+      </div>
+      <p class="hero-note">右侧为对局界面演示 · 象棋现已可玩</p>
+    </div>
+
+    <div class="board-side">
+      <div class="seat">
+        <span class="avatar">黑</span><span>黑方 · 演示玩家</span>
+        <span class="clock ph">[计时 v1]</span>
+      </div>
+      <div class="board" role="img" aria-label="象棋对局界面演示:红黑双方中局盘面">
+        <svg viewBox="0 0 460 510" aria-hidden="true">
+          <g stroke="var(--board-line)" stroke-width="1.4" fill="none">
+            <rect x="24" y="24" width="412" height="462" stroke-width="2.4"/>
+            <!-- 横线 10 条 -->
+            <path d="M30 30H430M30 80H430M30 130H430M30 180H430M30 230H430M30 280H430M30 330H430M30 380H430M30 430H430M30 480H430"/>
+            <!-- 竖线:边线贯通,内线过楚河断开 -->
+            <path d="M30 30V480M430 30V480"/>
+            <path d="M80 30V230M80 280V480M130 30V230M130 280V480M180 30V230M180 280V480M230 30V230M230 280V480M280 30V230M280 280V480M330 30V230M330 280V480M380 30V230M380 280V480"/>
+            <!-- 九宫斜线 -->
+            <path d="M180 30L280 130M280 30L180 130M180 380L280 480M280 380L180 480"/>
+          </g>
+          <text x="118" y="266" font-size="30" letter-spacing="10">楚河</text>
+          <text x="286" y="266" font-size="30" letter-spacing="10">漢界</text>
+        </svg>
+        <!-- 黑方 -->
+        <div class="piece black" style="left:50%;top:5.9%">將</div>
+        <div class="piece black" style="left:39.1%;top:5.9%">士</div>
+        <div class="piece black" style="left:60.9%;top:5.9%">象</div>
+        <div class="piece black" style="left:93.5%;top:15.7%">車</div>
+        <div class="piece black" style="left:15.2%;top:25.5%">砲</div>
+        <div class="piece black" style="left:6.5%;top:35.3%">卒</div>
+        <div class="piece black" style="left:50%;top:35.3%">卒</div>
+        <div class="piece black" style="left:93.5%;top:35.3%">卒</div>
+        <!-- 红方 -->
+        <div class="piece red" style="left:50%;top:94.1%">帥</div>
+        <div class="piece red" style="left:60.9%;top:94.1%">仕</div>
+        <div class="piece red" style="left:71.7%;top:94.1%">相</div>
+        <div class="piece red" style="left:6.5%;top:84.3%">俥</div>
+        <div class="piece red" style="left:28.3%;top:74.5%">傌</div>
+        <div class="piece red last" style="left:82.6%;top:74.5%">炮</div>
+        <div class="piece red ghost" style="left:82.6%;top:84.3%">炮</div>
+        <div class="piece red" style="left:6.5%;top:64.7%">兵</div>
+        <div class="piece red" style="left:50%;top:54.9%">兵</div>
+        <div class="piece red" style="left:93.5%;top:64.7%">兵</div>
+      </div>
+      <div class="seat red">
+        <span class="avatar">红</span><span>红方 · 演示玩家</span>
+        <span class="turn-chip"><span class="dot"></span>轮到 红方</span>
+      </div>
+      <div class="chat" aria-label="对局聊天演示">
+        <div class="bubble">炮二平五,开局。</div>
+        <div class="bubble me">将军。[聊天 UI 演示]</div>
+        <div class="input">说点什么… <span class="ph">[输入框 v1]</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="games">
+    <div class="sec-head"><span class="idx">01</span><h2>今天下什么</h2><span class="rule"></span></div>
+    <div class="lineup">
+      <article class="game-card playable">
+        <span class="glyph">俥</span>
+        <h3>象棋</h3>
+        <p>楚河汉界,运筹帷幄。红黑实时对弈,将军、悔棋、认输、观战齐备。</p>
+        <span class="badge live">现已可玩</span>
+      </article>
+      <article class="game-card soon">
+        <span class="glyph">圍</span>
+        <h3>围棋</h3>
+        <p>黑白纵横,敬请期待。</p>
+        <span class="badge soon">敬请期待</span>
+      </article>
+      <article class="game-card soon">
+        <span class="glyph">五</span>
+        <h3>五子棋</h3>
+        <p>五连即胜,敬请期待。</p>
+        <span class="badge soon">敬请期待</span>
+      </article>
+    </div>
+  </section>
+
+  <section id="play">
+    <div class="sec-head"><span class="idx">02</span><h2>一个房间号,就是一张棋桌</h2><span class="rule"></span></div>
+    <div class="flow">
+      <div class="step">
+        <div class="num">壹</div>
+        <h3>创建房间</h3>
+        <p>大厅里一键开局,或输入 <span class="roomcode">8241</span> 这样的房间号,加入朋友的棋桌。</p>
+      </div>
+      <div class="step">
+        <div class="num">贰</div>
+        <h3>实时落子</h3>
+        <p>WebSocket 直连,走子即达对面屏幕。轮走提示、将军提示,不会下错一步。</p>
+        <div class="chips"><span class="chip">轮走提示</span><span class="chip">将军提示</span></div>
+      </div>
+      <div class="step">
+        <div class="num">叁</div>
+        <h3>边下边聊</h3>
+        <p>对局内置聊天。下错了?悔棋一步。局面已定?认输也体面。</p>
+        <div class="chips"><span class="chip">对局聊天</span><span class="chip">悔棋</span><span class="chip">认输</span></div>
+      </div>
+      <div class="step">
+        <div class="num">肆</div>
+        <h3>坐下观战</h3>
+        <p>不想下?进房间当观战者,看别人运筹帷幄。<span class="ph">[icon 待补]</span></p>
+        <div class="chips"><span class="chip">观战</span><span class="chip">房间列表</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="join" class="closing">
+    <h2>今晚,来一局?</h2>
+    <p>无需下载。打开浏览器,坐下就是棋手。</p>
+    <a class="btn btn-primary" href="#">进入大厅 <span class="ph">[链接接 /lobby]</span></a>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-in">
+    <img src="assets/dicego-brand/logo-wordmark.png" alt="DiceGo">
+    <span>© 2026 DiceGo · MIT 开源</span>
+    <span class="stack">Vue3 · Element Plus · Spring Boot · WebSocket 实时对弈</span>
+  </div>
+</footer>
+
+<div class="tweaks" id="tweaks">
+  <div class="tweaks-panel">
+    <h4>TWEAKS</h4>
+    <div class="tweak-row">
+      <label>Accent</label>
+      <div class="seg" data-key="accent">
+        <button aria-pressed="true" data-val="brand">品牌红</button>
+        <button aria-pressed="false" data-val="logo">字标蓝橙</button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <label>棋盘材质</label>
+      <div class="seg" data-key="board">
+        <button aria-pressed="true" data-val="lacquer">夜漆</button>
+        <button aria-pressed="false" data-val="wood">暖木</button>
+      </div>
+    </div>
+    <div class="tweak-row">
+      <label>动效(v1 生效)</label>
+      <div class="seg" data-key="motion">
+        <button aria-pressed="true" data-val="on">开</button>
+        <button aria-pressed="false" data-val="off">关</button>
+      </div>
+    </div>
+    <div class="ver">v0 草稿 · 占位标记见 [ ]</div>
+  </div>
+  <button class="tweaks-toggle" aria-expanded="false">Tweaks</button>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var box = document.getElementById('tweaks');
+  var toggle = box.querySelector('.tweaks-toggle');
+  toggle.addEventListener('click', function(){
+    var open = box.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open);
+  });
+  box.querySelectorAll('.seg').forEach(function(seg){
+    var key = seg.dataset.key;
+    var saved = null;
+    try { saved = localStorage.getItem('dicego-tweak-' + key); } catch(e){}
+    if (saved) apply(seg, saved);
+    seg.querySelectorAll('button').forEach(function(btn){
+      btn.addEventListener('click', function(){ apply(seg, btn.dataset.val); });
+    });
+    function apply(seg, val){
+      seg.querySelectorAll('button').forEach(function(b){
+        b.setAttribute('aria-pressed', b.dataset.val === val);
+      });
+      if (key === 'motion') { root.dataset.motion = val; }
+      else { root.dataset[key] = val; }
+      try { localStorage.setItem('dicego-tweak-' + key, val); } catch(e){}
+    }
+  });
+})();
+</script>
+</body>
+</html>

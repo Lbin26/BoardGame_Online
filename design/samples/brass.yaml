@@ -1,0 +1,88 @@
+schemaVersion: 1
+meta:
+  key: brass
+  name: 工业革命：伯明翰
+  players: { min: 2, max: 4 }
+  durationMin: 90
+  targetWeight: 4
+  zone: heavy
+mechanisms:
+  - heavy-composite
+  - network-building
+  - economic-management
+  - hand-management
+components:
+  resources:
+    - { key: coal, name: 煤 }
+    - { key: iron, name: 铁 }
+    - { key: money, name: 金钱（£） }
+    - { key: beer, name: 啤酒（伯明翰特色，卖货需要） }
+  decks:
+    - key: locationCards
+      name: 地点卡（约值）
+      cards:
+        - { key: locBirmingham, name: 伯明翰, count: 4 }
+        - { key: locCoventry, name: 考文垂, count: 3 }
+        - { key: locWolverhampton, name: 伍尔弗汉普顿, count: 3 }
+        - { key: locWorcester, name: 伍斯特, count: 2 }
+        - { key: locStafford, name: 斯塔福德, count: 2 }
+    - key: industryCards
+      name: 产业卡（约值）
+      cards:
+        - { key: indCotton, name: 棉纺厂, count: 6 }
+        - { key: indCoal, name: 煤矿, count: 5 }
+        - { key: indIron, name: 铁厂, count: 4 }
+        - { key: indBrewery, name: 啤酒厂, count: 5 }
+        - { key: indGoods, name: 制造厂, count: 6 }
+        - { key: indPottery, name: 陶器厂, count: 3 }
+turnStructure:
+  phases:
+    - key: playCards
+      name: 打两张卡（两行动）
+      summary: 每回合打 2 张手牌各执行 1 行动——建产业（按产业卡/地点卡放置板块）、建网络（运河或铁路连接地点）、研发（移除低级产业板块）、卖货（棉纺/制造/陶器，需网络连通+啤酒）、贷款（取 £30，收入轨 -3）。
+    - key: refill
+      name: 补牌
+      summary: 抽牌至手牌 8 张（地点卡与产业卡混合牌库）。
+    - key: income
+      name: 收入阶段
+      summary: 按收入轨等级领取金钱。
+    - key: eraTransition
+      name: 时代切换
+      summary: 牌库耗尽且手牌打完→当前时代结束。运河时代结束翻面所有产业板块、移除运河、重置网络，进入铁路时代。铁路时代结束→终局计分。
+subsystems:
+  economy:
+    resources: [coal, iron, money]
+    initial: { coal: 2, iron: 1, money: 20 }
+    perTurn:
+      - { resource: money, produce: 5, consume: 0 }
+      - { resource: coal, produce: 1, consume: 0 }
+      - { resource: iron, produce: 1, consume: 0 }
+    actions:
+      - { key: buildFactory, cost: { money: 12, iron: 2 }, gain: { money: 6 }, vp: 4 }
+      - { key: buildIronWorks, cost: { money: 10, coal: 2 }, gain: { iron: 3 }, vp: 3 }
+      - { key: buildCoalMine, cost: { money: 8 }, gain: { coal: 4 }, vp: 2 }
+      - { key: buildRail, cost: { money: 5, coal: 1 }, gain: {}, vp: 1 }
+    stallK: 3
+  scoring:
+    endTrigger: 铁路时代牌库耗尽且所有玩家手牌打完→终局，最高 VP 者胜。
+    vpSources:
+      - key: tiles
+        name: 产业板块 VP
+        description: 已翻面（激活）产业板块印制的 VP。
+      - key: links
+        name: 网络链接 VP
+        description: 每条运河/铁路链接按收入轨等级计 VP（收入等级 × 链接数）。
+analysis:
+  whyFun: 两时代重策复合体，子系统高度耦合。煤铁动态共享市场（价格随供需波动）+ 网络连通门槛（须先连通地点才能卖货/建产业）+ 手牌空间约束（地点卡/产业卡决定可在哪建/建什么）+ 收入轨引擎。建铁厂需煤（市场买）、卖棉花需连接+啤酒、贷款换现金但降收入轨——每个行动都牵动多个子系统。运河→铁路时代切换重置网络，制造两段式策略弧线。
+  remixable:
+    - 煤铁动态共享市场——资源池价格随供需波动（满时便宜、空时贵），可借鉴到经济管理的动态定价（需规则护栏防囤积/倾销操纵）。
+    - 网络连通门槛——卖货/建产业须先连通地点，可借鉴到网络构建的先修路后收益。
+    - 两时代半重置——运河时代结束翻面板块/移除运河/重置网络，可借鉴到阶段切换/传承的两段策略弧线。
+    - 手牌限制行动空间——地点卡/产业卡约束可在哪建/建什么，可借鉴到卡牌驱动的空间约束。
+    - 贷款降收入轨——即时现金换长期收入损失，可借鉴到经济管理的借贷张力。
+    - 收入轨×链接数计分——网络规模与收入等级乘积，可借鉴到网络构建的终局计分。
+    - 研发移除低级板块——升级须先淘汰旧产能，可借鉴到引擎构建的创造性破坏。
+  pitfalls: 子系统耦合过紧→一步错满盘输；教学成本 30 分钟+；煤铁市场可被操纵需护栏；两时代重置对新手突兀。经济模型为静态流量近似——真实煤铁市场动态定价、网络连通判定、手牌约束、啤酒未在 economy 展开，economy 仅表达煤铁产消 + 金钱 flow 与建造门槛；greedy 策略会反复建最便宜的铁路而未必攒钱建大厂（声明式策略非 AI，精确最优需更丰富模型）。地点/产业卡数与具体费用/VP 为约值。
+  sources:
+    - title: 自身知识推理（离线，无实时检索；2~4 人/90 分/两时代运河→铁路、煤铁市场+金钱+啤酒、网络连通门槛、手牌 8 张每回合 2 行动、贷款 £30 降收入轨、收入轨×链接计分、研发移除低级板块为通行结构；卡数/具体费用/VP/economy 参数为约值/推理）
+  confidence: medium

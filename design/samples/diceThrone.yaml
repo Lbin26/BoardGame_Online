@@ -1,0 +1,73 @@
+schemaVersion: 1
+meta:
+  key: diceThrone
+  name: 王权骰铸
+  players: { min: 2, max: 2 }
+  durationMin: 30
+  targetWeight: 2
+  zone: narrative
+mechanisms:
+  - dice-driven
+  - variable-player-powers
+  - card-assist
+components:
+  dice:
+    - key: heroDice
+      faces: [sword, sword, shield, heart, energy, ultimate]
+      count: 5
+  decks:
+    - key: heroDeck
+      name: 英雄卡牌（升级/行动，约值）
+      cards:
+        - { key: upgrade, name: 升级卡, count: 15 }
+        - { key: action, name: 行动卡, count: 15 }
+turnStructure:
+  phases:
+    - key: upkeep
+      name: 维持阶段
+      summary: 抽牌至手牌上限、重置本回合可用骰与状态。
+    - key: main
+      name: 主阶段
+      summary: 掷 5 颗英雄骰（至多重掷 2 次），用骰面符号发动技能、积攒能量/治疗/获得状态；打牌（升级卡永久强化、行动卡即时效果）。
+    - key: offensive
+      name: 进攻能力
+      summary: 宣布一个攻击技能，攻方按骰面符号（sword 等）计算伤害。
+    - key: defensive
+      name: 防御能力
+      summary: 守方用防御卡/骰面（shield 等）减伤或反制，结算后扣减 HP。
+    - key: discard
+      name: 弃牌阶段
+      summary: 手牌超上限弃至上限，回合结束。
+subsystems:
+  conflict:
+    attacker:
+      diceCount: 5
+      faces: [sword, sword, shield, heart, energy, ultimate]
+      hitSymbols: [sword]
+      hp: 50
+      bonus: 0
+    defender:
+      diceCount: 5
+      faces: [sword, sword, shield, heart, energy, ultimate]
+      hitSymbols: [shield]
+      hp: 50
+      bonus: 0
+    maxRounds: 100
+  scoring:
+    endTrigger: 任一方英雄 HP 降至 0 即终局，对方获胜。
+    vpSources:
+      - key: ko
+        name: 击倒
+        description: 二元胜负，无积分。将对方英雄 HP 降至 0 即胜。
+analysis:
+  whyFun: 骰运 + mitigation 的张力——掷 5 骰但可重掷 2 次、用卡牌改面/加符号，把随机变成可管理的约束。每个英雄独特骰面分布/技能/卡组（可变玩家能力），选角即选策略风格。卡牌辅助层（升级卡永久强化、行动卡连击）让骰子不是全部。1v1 短局（30 分）适合反复对局琢磨角色。
+  remixable:
+    - 符号骰 + 重掷 mitigation——骰面是符号而非数字，重掷次数有限，可借鉴到任何骰驱游戏的"约束内选择"。
+    - 可变玩家能力（英雄不对称）——每角色独特骰面/技能/卡组，可借鉴到不对称对抗的重玩价值设计。
+    - 卡牌辅助层（升级永久 + 行动即时）——卡牌不主导而是强化骰子主机制，可借鉴到 dice-driven + card-assist 的分层。
+    - 攻防分离结算（进攻能力→防御能力）——攻击与防御分阶段、守方有响应窗口，可借鉴到战斗结算的互动性。
+    - HP 归零即胜（无积分）——直接击倒目标，可借鉴到美式对抗的简洁胜利条件。
+  pitfalls: 角色不对称（每英雄独特骰面分布/技能/卡组）不在本单份档案展开——此处用代表性骰面分布（sword×2/shield/heart/energy/ultimate）与对称 HP 示例。conflict 子系统为参数化攻防示例：工具包 conflict 模型是同时结算伤害，真实王权骰铸是回合制进攻→防御（守方减伤），此处 defender.hitSymbols=shield 抽象为反制伤害，非精确规则。骰面分布/HP/卡数为约值（英雄各异）。角色平衡是核心难点（强度方差→选角定胜负）。
+  sources:
+    - title: 自身知识推理（离线，无实时检索；1v1/30 分、5 颗英雄骰可重掷 2 次、符号骰面、升级/行动卡、HP 归零判胜、英雄不对称为通行结构；具体骰面分布/HP 值/卡数/攻防示例参数为约值/推理，英雄各异）
+  confidence: medium
