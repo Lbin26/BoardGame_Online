@@ -3,7 +3,7 @@ package org.dromara.boardgame.manager;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.dromara.boardgame.enums.RoomStatus;
+import org.dromara.game.common.enums.RoomStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

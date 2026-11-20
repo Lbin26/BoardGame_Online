@@ -1,6 +1,6 @@
 package org.dromara.boardgame.domain.vo;
 
-import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.game.common.enums.PlayerColor;
 
 import java.util.List;
 

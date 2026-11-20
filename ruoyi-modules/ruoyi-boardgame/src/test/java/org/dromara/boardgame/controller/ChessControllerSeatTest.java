@@ -1,9 +1,9 @@
 package org.dromara.boardgame.controller;
 
-import org.dromara.boardgame.domain.bo.CreateRoomBO;
-import org.dromara.boardgame.domain.bo.SeatBO;
-import org.dromara.boardgame.domain.vo.RoomVO;
-import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.game.common.domain.bo.CreateRoomBO;
+import org.dromara.game.common.domain.bo.SeatBO;
+import org.dromara.game.common.domain.vo.RoomVO;
+import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.boardgame.handler.ChessWebSocketHandler;
 import org.dromara.boardgame.manager.ChessRoom;
 import org.dromara.boardgame.manager.RoomManager;
@@ -109,7 +109,7 @@ class ChessControllerSeatTest {
         controller.takeSeat(roomId, seatBo("bob", "BLACK"));
         // 第二次落座使房间进入 PLAYING，handler 负责追加 GAME_START
         verify(handler).broadcastSeatChange(roomId, "bob", PlayerColor.BLACK);
-        assertEquals(org.dromara.boardgame.enums.RoomStatus.PLAYING,
+        assertEquals(org.dromara.game.common.enums.RoomStatus.PLAYING,
             roomManager.getRoom(roomId).getStatus());
     }
 

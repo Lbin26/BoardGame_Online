@@ -1,4 +1,4 @@
-package org.dromara.boardgame.enums;
+package org.dromara.game.common.enums;
 
 import lombok.Getter;
 

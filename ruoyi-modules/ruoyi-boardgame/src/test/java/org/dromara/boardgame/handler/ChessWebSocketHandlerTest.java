@@ -1,7 +1,7 @@
 package org.dromara.boardgame.handler;
 
-import org.dromara.boardgame.enums.PlayerColor;
-import org.dromara.boardgame.enums.RoomStatus;
+import org.dromara.game.common.enums.PlayerColor;
+import org.dromara.game.common.enums.RoomStatus;
 import org.dromara.boardgame.manager.ChessRoom;
 import org.dromara.boardgame.manager.RoomManager;
 import org.junit.jupiter.api.BeforeEach;

@@ -24,6 +24,12 @@
 
         <dependency>
             <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-game-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.dromara</groupId>
             <artifactId>ruoyi-api</artifactId>
         </dependency>
 

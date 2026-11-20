@@ -1,7 +1,7 @@
-package org.dromara.boardgame.domain.vo;
+package org.dromara.game.common.domain.vo;
 
-import org.dromara.boardgame.enums.PlayerColor;
-import org.dromara.boardgame.enums.RoomStatus;
+import org.dromara.game.common.enums.PlayerColor;
+import org.dromara.game.common.enums.RoomStatus;
 
 public record RoomVO(
     String roomId,

@@ -4,12 +4,12 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.boardgame.domain.vo.BoardSnapshotVO;
 import org.dromara.boardgame.domain.vo.ChessPieceVO;
-import org.dromara.boardgame.domain.vo.RoomVO;
+import org.dromara.game.common.domain.vo.RoomVO;
 import org.dromara.boardgame.engine.ChessBoard;
 import org.dromara.boardgame.engine.ChessEngine;
 import org.dromara.boardgame.engine.ChessPiece;
-import org.dromara.boardgame.enums.PlayerColor;
-import org.dromara.boardgame.enums.RoomStatus;
+import org.dromara.game.common.enums.PlayerColor;
+import org.dromara.game.common.enums.RoomStatus;
 
 import java.util.ArrayList;
 import java.util.List;

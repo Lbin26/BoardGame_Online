@@ -1,11 +1,11 @@
 package org.dromara.boardgame.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.dromara.boardgame.domain.bo.CreateRoomBO;
-import org.dromara.boardgame.domain.bo.SeatBO;
+import org.dromara.game.common.domain.bo.CreateRoomBO;
+import org.dromara.game.common.domain.bo.SeatBO;
 import org.dromara.boardgame.domain.vo.BoardSnapshotVO;
-import org.dromara.boardgame.domain.vo.RoomVO;
-import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.game.common.domain.vo.RoomVO;
+import org.dromara.game.common.enums.PlayerColor;
 import org.dromara.boardgame.handler.ChessWebSocketHandler;
 import org.dromara.boardgame.manager.ChessRoom;
 import org.dromara.boardgame.manager.RoomManager;

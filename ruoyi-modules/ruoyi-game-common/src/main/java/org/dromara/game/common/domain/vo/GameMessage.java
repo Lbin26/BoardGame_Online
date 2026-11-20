@@ -1,6 +1,6 @@
-package org.dromara.boardgame.domain.vo;
+package org.dromara.game.common.domain.vo;
 
-import org.dromara.boardgame.enums.GameMessageType;
+import org.dromara.game.common.enums.GameMessageType;
 
 public record GameMessage<T>(
     GameMessageType type,

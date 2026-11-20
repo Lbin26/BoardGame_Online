@@ -2,7 +2,7 @@ package org.dromara.boardgame.engine;
 
 import lombok.Getter;
 import org.dromara.boardgame.enums.PieceType;
-import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.game.common.enums.PlayerColor;
 
 import java.util.ArrayList;
 import java.util.List;

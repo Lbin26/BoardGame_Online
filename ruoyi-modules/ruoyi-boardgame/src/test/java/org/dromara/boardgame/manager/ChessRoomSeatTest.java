@@ -1,7 +1,7 @@
 package org.dromara.boardgame.manager;
 
-import org.dromara.boardgame.enums.PlayerColor;
-import org.dromara.boardgame.enums.RoomStatus;
+import org.dromara.game.common.enums.PlayerColor;
+import org.dromara.game.common.enums.RoomStatus;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

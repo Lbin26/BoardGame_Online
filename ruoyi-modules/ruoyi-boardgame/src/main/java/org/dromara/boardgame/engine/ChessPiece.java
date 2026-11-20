@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.dromara.boardgame.enums.PieceType;
-import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.game.common.enums.PlayerColor;
 
 @Getter
 @Setter

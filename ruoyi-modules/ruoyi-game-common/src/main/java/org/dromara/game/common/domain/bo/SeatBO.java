@@ -1,4 +1,4 @@
-package org.dromara.boardgame.domain.bo;
+package org.dromara.game.common.domain.bo;
 
 import lombok.Data;
 
