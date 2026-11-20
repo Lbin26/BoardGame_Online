@@ -2,12 +2,11 @@ package org.dromara.boardgame.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.dromara.boardgame.domain.bo.CreateRoomBO;
-import org.dromara.boardgame.domain.bo.JoinRoomBO;
+import org.dromara.boardgame.domain.bo.SeatBO;
 import org.dromara.boardgame.domain.vo.BoardSnapshotVO;
 import org.dromara.boardgame.domain.vo.RoomVO;
-import org.dromara.boardgame.engine.ChessBoard;
-import org.dromara.boardgame.engine.ChessPiece;
 import org.dromara.boardgame.enums.PlayerColor;
+import org.dromara.boardgame.handler.ChessWebSocketHandler;
 import org.dromara.boardgame.manager.ChessRoom;
 import org.dromara.boardgame.manager.RoomManager;
 import org.springframework.web.bind.annotation.*;
@@ -23,51 +22,95 @@ import java.util.Map;
 public class ChessController {
 
     private final RoomManager roomManager;
+    private final ChessWebSocketHandler webSocketHandler;
 
     @PostMapping("/rooms")
     public Map<String, Object> createRoom(@RequestBody CreateRoomBO bo) {
         Map<String, Object> result = new HashMap<>();
-        String name = bo.getPlayerName() == null || bo.getPlayerName().isBlank()
-            ? "玩家" + (int)(Math.random() * 1000) : bo.getPlayerName();
-        ChessRoom room = roomManager.createRoom(name);
+        if (bo.getPlayerName() == null || bo.getPlayerName().isBlank()) {
+            result.put("success", false);
+            result.put("error", "玩家名不能为空");
+            return result;
+        }
+        ChessRoom room = roomManager.createRoom(bo.getPlayerName());
         result.put("success", true);
-        result.put("room", room.toVO(name));
+        result.put("room", room.toVO(bo.getPlayerName()));
         result.put("board", room.getSnapshot());
         return result;
     }
 
-    @PostMapping("/rooms/join")
-    public Map<String, Object> joinRoom(@RequestBody JoinRoomBO bo) {
+    /** 手动选座：成功失败都返回当前 room+board，座位竞争败者据此立即重同步 */
+    @PostMapping("/rooms/{roomId}/seat")
+    public Map<String, Object> takeSeat(@PathVariable String roomId, @RequestBody SeatBO bo) {
         Map<String, Object> result = new HashMap<>();
-        ChessRoom room = roomManager.getRoom(bo.getRoomId());
+        ChessRoom room = roomManager.getRoom(roomId);
         if (room == null) {
             result.put("success", false);
             result.put("error", "房间不存在");
             return result;
         }
-        String name = bo.getPlayerName() == null || bo.getPlayerName().isBlank()
-            ? "玩家" + (int)(Math.random() * 1000) : bo.getPlayerName();
-
-        PlayerColor existing = room.getPlayerColor(name);
-        if (existing != null) {
-            result.put("success", true);
-            result.put("room", room.toVO(name));
-            result.put("board", room.getSnapshot());
+        if (bo.getPlayerName() == null || bo.getPlayerName().isBlank()) {
+            result.put("success", false);
+            result.put("error", "玩家名不能为空");
             return result;
         }
-
-        if (room.getBlackPlayerName() == null && room.getStatus() == org.dromara.boardgame.enums.RoomStatus.WAITING) {
-            if (room.joinAsBlack(name)) {
+        PlayerColor color;
+        try {
+            color = PlayerColor.valueOf(bo.getColor().toUpperCase());
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "无效的颜色");
+            fillRoom(result, room, bo.getPlayerName());
+            return result;
+        }
+        ChessRoom.SeatResult seatResult = room.takeSeat(bo.getPlayerName(), color);
+        switch (seatResult) {
+            case SUCCESS -> {
                 result.put("success", true);
-                result.put("room", room.toVO(name));
-                result.put("board", room.getSnapshot());
-                return result;
+                webSocketHandler.broadcastSeatChange(roomId, bo.getPlayerName(), color);
+            }
+            case NOT_WAITING -> {
+                result.put("success", false);
+                result.put("error", "对局已开始，无法选座");
+            }
+            case SEAT_TAKEN -> {
+                result.put("success", false);
+                result.put("error", "该座位已被占用");
             }
         }
-
-        result.put("success", false);
-        result.put("error", "房间已满或已开始");
+        fillRoom(result, room, bo.getPlayerName());
         return result;
+    }
+
+    /** 起身离座（仅等待中）：同样返回当前 room+board */
+    @PostMapping("/rooms/{roomId}/stand")
+    public Map<String, Object> standUp(@PathVariable String roomId, @RequestBody SeatBO bo) {
+        Map<String, Object> result = new HashMap<>();
+        ChessRoom room = roomManager.getRoom(roomId);
+        if (room == null) {
+            result.put("success", false);
+            result.put("error", "房间不存在");
+            return result;
+        }
+        if (bo.getPlayerName() == null || bo.getPlayerName().isBlank()) {
+            result.put("success", false);
+            result.put("error", "玩家名不能为空");
+            return result;
+        }
+        if (room.standUp(bo.getPlayerName())) {
+            result.put("success", true);
+            webSocketHandler.broadcastSeatChange(roomId, bo.getPlayerName(), null);
+        } else {
+            result.put("success", false);
+            result.put("error", "当前无法起身");
+        }
+        fillRoom(result, room, bo.getPlayerName());
+        return result;
+    }
+
+    private void fillRoom(Map<String, Object> result, ChessRoom room, String viewerName) {
+        result.put("room", room.toVO(viewerName));
+        result.put("board", room.getSnapshot());
     }
 
     @GetMapping("/rooms/{roomId}")

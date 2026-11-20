@@ -13,9 +13,14 @@ import org.dromara.boardgame.enums.RoomStatus;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class ChessRoom {
+
+    /** 选座结果 */
+    public enum SeatResult { SUCCESS, NOT_WAITING, SEAT_TAKEN }
 
     @Getter
     private final String roomId;
@@ -41,13 +46,14 @@ public class ChessRoom {
     @Getter
     private volatile boolean blackConnected;
 
-    private PlayerColor lastMoveCaptured = null;
+    /** 当前在线玩家名（含旁观者），用于清理宽限判定 */
+    private final Set<String> connectedPlayers = ConcurrentHashMap.newKeySet();
 
-    public ChessRoom(String roomId, String creatorName) {
+    public ChessRoom(String roomId) {
         this.roomId = roomId;
         this.engine = new ChessEngine();
         this.status = RoomStatus.WAITING;
-        this.redPlayerName = creatorName;
+        this.redPlayerName = null;
         this.blackPlayerName = null;
         this.lastActivityAt = System.currentTimeMillis();
     }
@@ -57,17 +63,48 @@ public class ChessRoom {
     }
 
     public synchronized void markConnected(String playerName, boolean connected) {
+        if (connected) connectedPlayers.add(playerName);
+        else connectedPlayers.remove(playerName);
         PlayerColor color = getPlayerColor(playerName);
         if (color == PlayerColor.RED) this.redConnected = connected;
         else if (color == PlayerColor.BLACK) this.blackConnected = connected;
         touch();
     }
 
-    public synchronized boolean joinAsBlack(String playerName) {
+    public boolean hasConnectedPlayers() {
+        return !connectedPlayers.isEmpty();
+    }
+
+    /**
+     * 手动选座：仅等待中可选；目标座空或已是自己则成功（同座幂等、占另一座则换座）；
+     * 双座满自动进入对局；被他人占用则失败且不变异。
+     */
+    public synchronized SeatResult takeSeat(String playerName, PlayerColor color) {
+        if (status != RoomStatus.WAITING) return SeatResult.NOT_WAITING;
+        String target = color == PlayerColor.RED ? redPlayerName : blackPlayerName;
+        if (target != null && !target.equals(playerName)) return SeatResult.SEAT_TAKEN;
+        // 换座：先腾出原座位
+        if (playerName.equals(redPlayerName)) redPlayerName = null;
+        if (playerName.equals(blackPlayerName)) blackPlayerName = null;
+        if (color == PlayerColor.RED) redPlayerName = playerName;
+        else blackPlayerName = playerName;
+        if (redPlayerName != null && blackPlayerName != null) {
+            this.status = RoomStatus.PLAYING;
+        }
+        touch();
+        return SeatResult.SUCCESS;
+    }
+
+    /** 起身离座：仅等待中且已入座可行；对局中离开视为认输而非起身 */
+    public synchronized boolean standUp(String playerName) {
         if (status != RoomStatus.WAITING) return false;
-        if (blackPlayerName != null) return false;
-        this.blackPlayerName = playerName;
-        this.status = RoomStatus.PLAYING;
+        if (playerName != null && playerName.equals(redPlayerName)) {
+            redPlayerName = null;
+        } else if (playerName != null && playerName.equals(blackPlayerName)) {
+            blackPlayerName = null;
+        } else {
+            return false;
+        }
         touch();
         return true;
     }
@@ -88,8 +125,9 @@ public class ChessRoom {
         PlayerColor color = getPlayerColor(playerName);
         if (color == null) return false;
         if (color != engine.getCurrentTurn()) return false;
-        ChessPiece captured = engine.move(fromRow, fromCol, toRow, toCol);
-        if (captured == null) return false;
+        // engine.move 返回被吃子（未吃子为 null），不能用返回值判成败
+        if (!engine.isValidMove(fromRow, fromCol, toRow, toCol)) return false;
+        engine.move(fromRow, fromCol, toRow, toCol);
         touch();
         if (engine.isGameOver()) {
             this.status = RoomStatus.FINISHED;
@@ -125,10 +163,21 @@ public class ChessRoom {
         return engine.getValidMoves(piece);
     }
 
+    /** 再来一局：保留双方座位，重置棋盘；双座满直接回到对局中 */
+    public synchronized void resetForRematch() {
+        engine.reset();
+        this.status = (redPlayerName != null && blackPlayerName != null)
+            ? RoomStatus.PLAYING : RoomStatus.WAITING;
+        touch();
+    }
+
+    /** 管理端完全重置：清空双方座位回到等待中 */
     public synchronized void reset() {
         engine.reset();
         this.status = RoomStatus.WAITING;
+        this.redPlayerName = null;
         this.blackPlayerName = null;
+        touch();
     }
 
     public BoardSnapshotVO getSnapshot() {

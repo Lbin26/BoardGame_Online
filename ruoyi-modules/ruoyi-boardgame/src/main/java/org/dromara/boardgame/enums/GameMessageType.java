@@ -7,6 +7,7 @@ public enum GameMessageType {
 
     ROOM_CREATED("room_created", "房间创建"),
     PLAYER_JOINED("player_joined", "玩家加入"),
+    SEAT_CHANGED("seat_changed", "座位变更"),
     GAME_START("game_start", "游戏开始"),
     MOVE("move", "落子"),
     MOVE_VALID("move_valid", "落子有效"),

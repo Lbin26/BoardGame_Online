@@ -17,7 +17,9 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class RoomManager {
 
-    private static final long WAITING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(30);
+    /** 无人在线时的清理宽限：等待中 / 对局中（双方掉线） / 已结束 */
+    private static final long WAITING_GRACE_MS = TimeUnit.SECONDS.toMillis(30);
+    private static final long PLAYING_ABANDON_MS = TimeUnit.SECONDS.toMillis(120);
     private static final long FINISHED_TTL_MS = TimeUnit.SECONDS.toMillis(60);
     private static final long CLEANUP_INTERVAL_SEC = 15;
 
@@ -26,9 +28,9 @@ public class RoomManager {
 
     public ChessRoom createRoom(String playerName) {
         String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-        ChessRoom room = new ChessRoom(roomId, playerName);
+        ChessRoom room = new ChessRoom(roomId);
         rooms.put(roomId, room);
-        log.info("创建房间: {} by {}", roomId, playerName);
+        log.info("创建房间: {} by {}（座位待选）", roomId, playerName);
         return room;
     }
 
@@ -61,7 +63,8 @@ public class RoomManager {
             t.setDaemon(true);
             return t;
         });
-        scheduler.scheduleAtFixedRate(this::cleanup, CLEANUP_INTERVAL_SEC, CLEANUP_INTERVAL_SEC, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(() -> cleanup(System.currentTimeMillis()),
+            CLEANUP_INTERVAL_SEC, CLEANUP_INTERVAL_SEC, TimeUnit.SECONDS);
         log.info("房间自动清理定时任务启动");
     }
 
@@ -70,31 +73,24 @@ public class RoomManager {
         if (scheduler != null) scheduler.shutdownNow();
     }
 
-    private void cleanup() {
-        long now = System.currentTimeMillis();
+    /**
+     * 统一清理规则：仅当无人在线（含旁观者）且空闲超过对应状态宽限时移除。
+     * 有人在线的房间一律保留；刷新页面造成的短暂断线不会误杀房间。
+     * 包级可见 + now 参数便于单测注入时间。
+     */
+    void cleanup(long now) {
         int removed = 0;
         for (ChessRoom room : rooms.values()) {
-            boolean shouldRemove = false;
-            String reason = null;
-
-            if (room.getStatus() == RoomStatus.WAITING) {
-                boolean creatorGone = !room.isRedConnected();
-                boolean timeout = now - room.getLastActivityAt() > WAITING_TIMEOUT_MS;
-                if (creatorGone || timeout) {
-                    shouldRemove = true;
-                    reason = creatorGone ? "创建者已离线" : "等待超时";
-                }
-            } else if (room.getStatus() == RoomStatus.FINISHED) {
-                boolean ttl = now - room.getLastActivityAt() > FINISHED_TTL_MS;
-                if (ttl) {
-                    shouldRemove = true;
-                    reason = "对局结束已清理";
-                }
-            }
-
-            if (shouldRemove) {
+            if (room.hasConnectedPlayers()) continue;
+            long idle = now - room.getLastActivityAt();
+            long grace = switch (room.getStatus()) {
+                case WAITING -> WAITING_GRACE_MS;
+                case PLAYING -> PLAYING_ABANDON_MS;
+                case FINISHED -> FINISHED_TTL_MS;
+            };
+            if (idle > grace) {
                 rooms.remove(room.getRoomId());
-                log.info("房间清理: {} ({})", room.getRoomId(), reason);
+                log.info("房间清理: {} ({} 无人在线超宽限)", room.getRoomId(), room.getStatus());
                 removed++;
             }
         }
