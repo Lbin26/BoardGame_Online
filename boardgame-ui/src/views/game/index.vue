@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -7,6 +7,7 @@ import * as chessApi from '@/api/xiangqi'
 import type { RoomInfo } from '@/api/xiangqi'
 import ChessBoard from '@/components/ChessBoard.vue'
 import SeatPicker from '@/components/SeatPicker.vue'
+import { useChat } from '@/composables/useChat'
 import { useUserStore } from '@/store/user'
 import { getPieceAt } from '@/utils/board'
 import { copyText } from '@/utils/clipboard'
@@ -35,13 +36,6 @@ interface Cell {
   col: number
 }
 
-/** 聊天消息 */
-interface ChatMessage {
-  who: string
-  text: string
-  whoClass: string
-}
-
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
@@ -59,9 +53,25 @@ const winner = ref<'RED' | 'BLACK' | null>(null)
 const gameReason = ref('')
 const inCheck = ref(false)
 
-const chatMessages = ref<ChatMessage[]>([])
-const chatText = ref('')
 const chatBox = ref<HTMLElement | null>(null)
+
+/** WS 就绪时发送 JSON 消息 */
+function wsSend(msg: object): void {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
+}
+
+const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
+  send: (text) => wsSend({ type: 'CHAT', payload: { text } }),
+  classifyWho: (who) =>
+    who === 'system'
+      ? 'system'
+      : who === room.value?.redPlayerName
+        ? 'red'
+        : who === room.value?.blackPlayerName
+          ? 'black'
+          : 'spectator',
+  scrollTarget: chatBox,
+})
 
 const connected = ref(false)
 /** 被其他标签页/窗口的同名连接替换：停止自动重连，避免互踢循环 */
@@ -159,21 +169,6 @@ function mergeRoom(msg: any): void {
 function clearSelection(): void {
   selectedCell.value = null
   validMoves.value = []
-}
-
-function addChatMsg(who: string, text: string): void {
-  const whoClass =
-    who === 'system'
-      ? 'system'
-      : who === room.value?.redPlayerName
-        ? 'red'
-        : who === room.value?.blackPlayerName
-          ? 'black'
-          : 'spectator'
-  chatMessages.value.push({ who, text, whoClass })
-  nextTick(() => {
-    if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
-  })
 }
 
 function connectWS(roomId: string, playerName: string): void {
@@ -367,19 +362,15 @@ async function onCellClick(cell: Cell): Promise<void> {
     )
 
     if (isValid) {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: 'MOVE',
-            payload: {
-              fromRow: from.row,
-              fromCol: from.col,
-              toRow: cell.row,
-              toCol: cell.col,
-            },
-          }),
-        )
-      }
+      wsSend({
+        type: 'MOVE',
+        payload: {
+          fromRow: from.row,
+          fromCol: from.col,
+          toRow: cell.row,
+          toCol: cell.col,
+        },
+      })
       selectedCell.value = null
       validMoves.value = []
       return
@@ -412,16 +403,8 @@ async function loadValidMoves(row: number, col: number): Promise<void> {
   }
 }
 
-function sendChat(): void {
-  const text = chatText.value.trim()
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(JSON.stringify({ type: 'CHAT', payload: { text } }))
-  chatText.value = ''
-}
-
 function sendUndo(): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(JSON.stringify({ type: 'UNDO', payload: {} }))
+  wsSend({ type: 'UNDO', payload: {} })
 }
 
 async function sendResign(): Promise<void> {
@@ -434,14 +417,12 @@ async function sendResign(): Promise<void> {
   } catch {
     return
   }
-  if (!ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(JSON.stringify({ type: 'RESIGN', payload: {} }))
+  wsSend({ type: 'RESIGN', payload: {} })
 }
 
 function sendRematch(): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return
   inCheck.value = false
-  ws.send(JSON.stringify({ type: 'REMATCH', payload: {} }))
+  wsSend({ type: 'REMATCH', payload: {} })
 }
 
 /** 手动接管：在本页重连（会替换其他标签页的连接，对方收到通知后停止） */

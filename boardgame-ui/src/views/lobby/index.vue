@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import * as chessApi from '@/api/xiangqi'
-import type { RoomListItem } from '@/api/xiangqi'
+import { useRoom } from '@/composables/useRoom'
 import { useUserStore } from '@/store/user'
 import { ZONES, gamesInZone, resolveLevel } from '@/constants/catalog'
 import ZoneGrid from '@/components/ZoneGrid.vue'
@@ -15,29 +15,32 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+const {
+  rooms,
+  waitingCount,
+  playingCount,
+  refreshing,
+  listError,
+  showSkeleton,
+  refresh: refreshRooms,
+  startPolling,
+  stopPolling,
+} = useRoom({
+  listRooms: () => chessApi.listRooms(),
+  onError: (msg) => ElMessage.error(msg),
+})
+
 /** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 象棋房间层） */
 const nav = computed(() => resolveLevel(route.query))
 
-const rooms = ref<RoomListItem[]>([])
-const waitingCount = ref(0)
-const playingCount = ref(0)
 const joinRoomId = ref('')
 const loading = ref(false)
-const refreshing = ref(false)
-/** 仅手动刷新/首载失败置位；轮询静默失败不置位（契约） */
-const listError = ref(false)
-
-/** 骨架屏仅在「刷新中且尚无列表」时出现，避免 5s 轮询闪骨架 */
-const showSkeleton = computed(() => refreshing.value && rooms.value.length === 0 && !listError.value)
 
 /** 顶栏头像取昵称首字 */
 const avatarChar = computed(() => {
   const name = userStore.userInfo?.nickName || userStore.userInfo?.userName || ''
   return name ? name.charAt(0) : '?'
 })
-
-/** 轮询定时器与 focus/visibility 监听句柄 */
-let pollTimer: number | undefined
 
 /** 状态归一化 + 中文映射（与 demo 的 statusText 一致） */
 function statusText(status: string): string {
@@ -56,26 +59,6 @@ function currentUserName(): string {
 function errMsg(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
-}
-
-/** 拉取房间列表；silent 用于轮询/focus 刷新（失败不弹 toast） */
-async function refreshRooms(silent = false): Promise<void> {
-  if (refreshing.value) return
-  refreshing.value = true
-  try {
-    const data = await chessApi.listRooms()
-    rooms.value = data.rooms ?? []
-    waitingCount.value = data.waitingCount ?? 0
-    playingCount.value = data.playingCount ?? 0
-    listError.value = false
-  } catch (error) {
-    if (!silent) {
-      listError.value = true
-      ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试'))
-    }
-  } finally {
-    refreshing.value = false
-  }
 }
 
 /** 创建房间：成功即跳转对局页（入座在房内选择） */
@@ -127,11 +110,6 @@ async function handleJoinInput(): Promise<void> {
   await handleJoin(roomId)
 }
 
-/** 页面重新可见时静默刷新 */
-function onVisible(): void {
-  if (document.visibilityState === 'visible') refreshRooms(true)
-}
-
 /** 进入分区（level 0 → 1） */
 function openZone(zoneKey: string): void {
   router.push({ path: '/lobby', query: { zone: zoneKey } })
@@ -150,27 +128,6 @@ function backToLobby(): void {
 /** 进入桌游设计助手工作台（独立工具，不进七分区） */
 function goDesign(): void {
   router.push('/design')
-}
-
-/** 房间层轮询：立即拉一次 + 5s 间隔（仅可见时）+ focus/visibility 静默刷新 */
-function startPolling(): void {
-  if (pollTimer !== undefined) return
-  refreshRooms()
-  pollTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') refreshRooms(true)
-  }, 5000)
-  window.addEventListener('focus', onVisible)
-  document.addEventListener('visibilitychange', onVisible)
-}
-
-/** 离开房间层/卸载：停表并摘监听，杜绝泄漏 */
-function stopPolling(): void {
-  if (pollTimer !== undefined) {
-    clearInterval(pollTimer)
-    pollTimer = undefined
-  }
-  window.removeEventListener('focus', onVisible)
-  document.removeEventListener('visibilitychange', onVisible)
 }
 
 // 轮询生命周期严格绑定 level 2；immediate 覆盖深链直达房间层
