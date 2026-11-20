@@ -6,6 +6,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { CLIENT_ID, getCaptcha } from '@/api/auth'
 import type { LoginBody } from '@/api/auth'
 import { useUserStore } from '@/store/user'
+import logoWordmark from '@/assets/logo-wordmark.png'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,12 +35,19 @@ async function refreshCaptcha(): Promise<void> {
   const data = await getCaptcha()
   captchaEnabled.value = data.captchaEnabled
   if (data.captchaEnabled) {
-    captchaImg.value = data.img
+    captchaImg.value = 'data:image/png;base64,' + data.img
     form.uuid = data.uuid
   }
 }
 
-onMounted(refreshCaptcha)
+onMounted(() => {
+  refreshCaptcha().catch(() => ElMessage.error('验证码加载失败，请重试'))
+})
+
+/** 手动点击刷新验证码：失败仅提示，避免未处理 rejection */
+function onCaptchaClick(): void {
+  refreshCaptcha().catch(() => ElMessage.error('验证码刷新失败，请重试'))
+}
 
 /** 提交登录 */
 async function handleSubmit(): Promise<void> {
@@ -69,6 +77,13 @@ async function handleSubmit(): Promise<void> {
     router.push(redirect)
   } catch (error) {
     ElMessage.error((error as Error).message || '登录失败')
+    // 验证码一次性：失败后必须换新，否则重试必报"验证码已失效"
+    // 刷新自身也可能失败（如网络中断）：兜底提示，避免未处理 rejection
+    try {
+      await refreshCaptcha()
+    } catch {
+      ElMessage.error('验证码刷新失败，请重试')
+    }
   } finally {
     loading.value = false
   }
@@ -77,6 +92,7 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div class="auth-page">
+    <img class="auth-logo" :src="logoWordmark" alt="DiceGo" />
     <el-card class="auth-card">
       <template #header>
         <h2 class="auth-title">登录</h2>
@@ -107,7 +123,7 @@ async function handleSubmit(): Promise<void> {
               :src="captchaImg"
               alt="验证码"
               title="点击刷新"
-              @click="refreshCaptcha"
+              @click="onCaptchaClick"
             />
           </div>
         </el-form-item>
@@ -131,10 +147,16 @@ async function handleSubmit(): Promise<void> {
 <style scoped lang="scss">
 .auth-page {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 20px;
   min-height: 100vh;
   padding: 24px;
+}
+
+.auth-logo {
+  height: 44px;
 }
 
 .auth-card {

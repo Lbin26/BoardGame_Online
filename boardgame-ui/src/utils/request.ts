@@ -1,8 +1,11 @@
 import axios, {
   type AxiosError,
   type AxiosInstance,
+  type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios'
+
+import { CLIENT_ID } from '@/constants/client'
 
 /** 登录令牌在 localStorage 中的键名 */
 export const TOKEN_KEY = 'access_token'
@@ -16,7 +19,7 @@ export function getToken(): string | null {
  * 解包后端标准信封 `R<T>`（`{ code, msg, data }`）。
  * 成功约定 `code === 200`，返回 `data`；否则抛出 `Error(msg)`。
  *
- * 仅 auth / user 等返回 `R` 的接口使用；象棋接口返回裸 Map，不走此函数。
+ * 纯函数，不做副作用；401 登出跳转由响应拦截器处理。
  */
 export function unwrapR(body: any): any {
   if (body?.code === 200) {
@@ -25,8 +28,9 @@ export function unwrapR(body: any): any {
   throw new Error(body?.msg ?? '请求失败')
 }
 
-/** 请求拦截器：注入 `Authorization: Bearer <token>` */
-function attachAuthToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
+/** 请求拦截器：注入 `clientid`（sa-token 必需）与 `Authorization: Bearer <token>` */
+export function attachAuthToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
+  config.headers.clientid = CLIENT_ID
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -34,10 +38,38 @@ function attachAuthToken(config: InternalAxiosRequestConfig): InternalAxiosReque
   return config
 }
 
-/** 401 处理：清除本地令牌并跳转登录页 */
-function handleUnauthorized(): void {
+/** 401 处理：清除本地令牌并跳转登录页（携带回跳地址） */
+export function handleUnauthorized(): void {
   localStorage.removeItem(TOKEN_KEY)
-  window.location.href = '/login'
+  if (window.location.pathname !== '/login') {
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.href = `/login?redirect=${redirect}`
+  }
+}
+
+/** 检测 R 信封中的 401（HTTP 200 但业务未授权）；命中则登出跳转并返回 true */
+export function isEnvelopeUnauthorized(body: any): boolean {
+  if (body?.code === 401) {
+    handleUnauthorized()
+    return true
+  }
+  return false
+}
+
+/** 标准实例响应拦截：先查信封 401，再解包 R */
+export function unwrapResponse(response: AxiosResponse): any {
+  if (isEnvelopeUnauthorized(response.data)) {
+    return Promise.reject(new Error(response.data?.msg ?? '登录已过期'))
+  }
+  return unwrapR(response.data)
+}
+
+/** 原始实例响应拦截：先查信封 401，再透传裸 Map（象棋接口无 code 字段，不受影响） */
+export function rawResponse(response: AxiosResponse): any {
+  if (isEnvelopeUnauthorized(response.data)) {
+    return Promise.reject(new Error(response.data?.msg ?? '登录已过期'))
+  }
+  return response.data
 }
 
 /** 响应错误处理（HTTP 401 时登出并跳转） */
@@ -58,10 +90,7 @@ export const request: AxiosInstance = axios.create({
 
 request.interceptors.request.use(attachAuthToken)
 
-request.interceptors.response.use(
-  (response) => unwrapR(response.data),
-  onResponseError,
-)
+request.interceptors.response.use(unwrapResponse, onResponseError)
 
 /**
  * 原始请求实例：用于象棋接口（返回裸 Map，非 `R` 信封）。
@@ -73,9 +102,6 @@ export const rawRequest: AxiosInstance = axios.create({
 
 rawRequest.interceptors.request.use(attachAuthToken)
 
-rawRequest.interceptors.response.use(
-  (response) => response.data,
-  onResponseError,
-)
+rawRequest.interceptors.response.use(rawResponse, onResponseError)
 
 export default request

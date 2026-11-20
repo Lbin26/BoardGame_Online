@@ -4,9 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import * as chessApi from '@/api/chess'
+import type { RoomInfo } from '@/api/chess'
 import ChessBoard from '@/components/ChessBoard.vue'
+import SeatPicker from '@/components/SeatPicker.vue'
 import { useUserStore } from '@/store/user'
 import { getPieceAt } from '@/utils/board'
+import { copyText } from '@/utils/clipboard'
 
 /** 棋盘上的一个棋子（后端 ChessPieceVO） */
 interface ChessPiece {
@@ -26,15 +29,6 @@ interface BoardSnapshot {
   winner: 'RED' | 'BLACK' | null
 }
 
-/** 房间信息（后端 RoomVO） */
-interface RoomVO {
-  roomId: string
-  redPlayerName: string | null
-  blackPlayerName: string | null
-  status: string
-  viewerColor: 'RED' | 'BLACK' | null
-}
-
 /** 棋盘交叉点 */
 interface Cell {
   row: number
@@ -52,10 +46,11 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-const room = ref<RoomVO | null>(null)
+const room = ref<RoomInfo | null>(null)
 const pieces = ref<ChessPiece[]>([])
 const currentTurn = ref<'RED' | 'BLACK'>('RED')
 const viewerColor = ref<'RED' | 'BLACK' | null>(null)
+const myName = ref('')
 
 const selectedCell = ref<Cell | null>(null)
 const validMoves = ref<Cell[]>([])
@@ -69,8 +64,21 @@ const chatText = ref('')
 const chatBox = ref<HTMLElement | null>(null)
 
 const connected = ref(false)
+/** 被其他标签页/窗口的同名连接替换：停止自动重连，避免互踢循环 */
+const replacedNotice = ref(false)
+
+/** 无座时的选座面板 / 已入座时主动换座 */
+const pickerOpen = ref(false)
+const switching = ref(false)
 
 let ws: WebSocket | null = null
+let intentionalClose = false
+/** 挂载 await 期间用户可能已离开：续体不得再建 WS/改状态 */
+let unmounted = false
+let retries = 0
+let reconnectTimer: number | null = null
+const MAX_RETRIES = 5
+const RECONNECT_DELAY_MS = 2000
 
 /** 是否红方视角轮到自己 */
 const isRedTurn = computed(
@@ -80,6 +88,13 @@ const isRedTurn = computed(
 /** 是否黑方视角轮到自己 */
 const isBlackTurn = computed(
   () => viewerColor.value === 'BLACK' && currentTurn.value === 'BLACK',
+)
+
+/** 选座面板：等待中且（无座未关面板 或 主动换座） */
+const showPicker = computed(
+  () =>
+    room.value?.status === 'WAITING' &&
+    ((pickerOpen.value && !viewerColor.value) || switching.value),
 )
 
 /** 获胜文案 */
@@ -115,6 +130,31 @@ function applyBoard(snap: BoardSnapshot): void {
   validMoves.value = []
 }
 
+/** REST 响应为权威：room+viewerColor+board 一律以针对自己的响应为准 */
+function applyRoomResponse(data: chessApi.RoomData): void {
+  if (data.room) {
+    room.value = data.room
+    viewerColor.value = data.room.viewerColor ?? null
+  }
+  if (data.board) applyBoard(data.board as BoardSnapshot)
+}
+
+/**
+ * WS 消息合并房间：广播只合并 names/status 等公共字段。
+ * 后端广播一律中立视角 toVO(null)，故 viewerColor 只从自身同步的
+ * PLAYER_JOINED 采纳；SEAT_CHANGED/REMATCH 的自身消息另行处理（见 switch）。
+ */
+function mergeRoom(msg: any): void {
+  const incoming = msg.payload?.room as RoomInfo | undefined
+  if (!incoming) return
+  const { viewerColor: incomingColor, ...rest } = incoming
+  room.value = { ...room.value, ...rest } as RoomInfo
+  // 自身同步带 board；关于自己的中立加入广播不带 board，不得采纳其 viewerColor
+  if (msg.playerName === myName.value && msg.type === 'PLAYER_JOINED' && msg.payload?.board) {
+    viewerColor.value = incomingColor ?? null
+  }
+}
+
 /** 清空选中与合法走法（断开/落子后避免残留高亮） */
 function clearSelection(): void {
   selectedCell.value = null
@@ -127,7 +167,9 @@ function addChatMsg(who: string, text: string): void {
       ? 'system'
       : who === room.value?.redPlayerName
         ? 'red'
-        : 'black'
+        : who === room.value?.blackPlayerName
+          ? 'black'
+          : 'spectator'
   chatMessages.value.push({ who, text, whoClass })
   nextTick(() => {
     if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
@@ -142,6 +184,8 @@ function connectWS(roomId: string, playerName: string): void {
 
   ws.onopen = () => {
     connected.value = true
+    replacedNotice.value = false
+    retries = 0
   }
   ws.onmessage = (evt) => {
     try {
@@ -150,15 +194,26 @@ function connectWS(roomId: string, playerName: string): void {
       console.warn('WS parse error', e)
     }
   }
-  ws.onclose = () => {
+  ws.onclose = (evt: CloseEvent) => {
     connected.value = false
     clearSelection()
-    ElMessage.warning('连接断开')
+    if (intentionalClose) return
+    // 同房间同名连接被新标签页替换：不重连（否则两页互踢成死循环），提示手动接管
+    if (evt?.reason === 'replaced by new connection') {
+      replacedNotice.value = true
+      return
+    }
+    if (retries < MAX_RETRIES) {
+      retries++
+      ElMessage.warning(`连接断开，正在重连（${retries}/${MAX_RETRIES}）...`)
+      reconnectTimer = window.setTimeout(() => connectWS(roomId, playerName), RECONNECT_DELAY_MS)
+    } else {
+      ElMessage.error('连接已断开，请刷新页面重试')
+    }
   }
   ws.onerror = () => {
     connected.value = false
     clearSelection()
-    ElMessage.error('连接出错，请刷新重试')
   }
 }
 
@@ -167,16 +222,36 @@ function handleWSMessage(msg: any): void {
   const p = msg.payload
   switch (t) {
     case 'PLAYER_JOINED':
-      // 注意：后端以 joiningPlayerName 视角 toVO，p.room.viewerColor 是加入者颜色，
-      // 不能据此覆盖接收者自己的 viewerColor（已由 getRoom/joinRoom 正确设置）。
-      if (p?.room) {
-        room.value = { ...room.value, ...p.room } as RoomVO
+      mergeRoom(msg)
+      // 仅自身同步消息带棋盘（刷新恢复）；他人加入广播不带
+      if (p?.board && msg.playerName === myName.value) {
+        applyBoard(p.board as BoardSnapshot)
       }
-      if (p?.board) applyBoard(p.board as BoardSnapshot)
       addChatMsg('system', `${msg.playerName} 进入了房间`)
+      break
+    case 'SEAT_CHANGED':
+      mergeRoom(msg)
+      // 关于我自己的座位广播：颜色以 payload.color 为准（room 是中立视角）
+      if (msg.playerName === myName.value) {
+        viewerColor.value = p?.color ?? null
+        if (p?.color) {
+          pickerOpen.value = false
+          switching.value = false
+        } else if (room.value?.status === 'WAITING') {
+          pickerOpen.value = true
+        }
+      }
+      addChatMsg(
+        'system',
+        p?.color
+          ? `${msg.playerName} 坐到了${p.color === 'RED' ? '红方' : '黑方'}`
+          : `${msg.playerName} 起身了`,
+      )
       break
     case 'GAME_START':
       if (p?.board) applyBoard(p.board as BoardSnapshot)
+      pickerOpen.value = false
+      switching.value = false
       addChatMsg('system', '对局开始')
       break
     case 'MOVE':
@@ -194,13 +269,14 @@ function handleWSMessage(msg: any): void {
       inCheck.value = false
       break
     case 'RESIGN':
-      addChatMsg('system', '认输了')
+      addChatMsg('system', `${msg.playerName} 认输了`)
       break
     case 'UNDO':
       if (p?.board) applyBoard(p.board as BoardSnapshot)
-      addChatMsg('system', '悔棋了')
+      addChatMsg('system', `${msg.playerName} 悔棋了`)
       break
     case 'REMATCH':
+      mergeRoom(msg)
       if (p?.board) applyBoard(p.board as BoardSnapshot)
       gameOver.value = false
       winner.value = null
@@ -209,11 +285,70 @@ function handleWSMessage(msg: any): void {
       addChatMsg('system', '新对局开始')
       break
     case 'PLAYER_LEAVE':
-      addChatMsg('system', '离开了房间')
+      addChatMsg('system', `${msg.playerName} 离开了房间`)
       break
     case 'CHAT':
       addChatMsg(msg.playerName, p?.text ?? '')
       break
+  }
+}
+
+/** 选座：成功失败都以 REST 响应重同步（竞争败者立即看到占座者） */
+async function chooseSeat(color: 'RED' | 'BLACK'): Promise<void> {
+  const roomId = room.value?.roomId
+  if (!roomId || !myName.value) return
+  try {
+    const data = await chessApi.takeSeat(roomId, myName.value, color)
+    applyRoomResponse(data)
+    if (data.success) {
+      pickerOpen.value = false
+      switching.value = false
+      ElMessage.success(color === 'RED' ? '已坐到红方' : '已坐到黑方')
+    } else {
+      ElMessage.error(data.error ?? '选座失败')
+    }
+  } catch {
+    ElMessage.error('选座失败，请重试')
+  }
+}
+
+/** 起身离座（仅等待中） */
+async function doStandUp(): Promise<void> {
+  const roomId = room.value?.roomId
+  if (!roomId || !myName.value) return
+  try {
+    const data = await chessApi.standUp(roomId, myName.value)
+    applyRoomResponse(data)
+    if (data.success) {
+      pickerOpen.value = true
+    } else {
+      ElMessage.error(data.error ?? '当前无法起身')
+    }
+  } catch {
+    ElMessage.error('起身失败，请重试')
+  }
+}
+
+function onSpectate(): void {
+  pickerOpen.value = false
+}
+
+function reopenPicker(): void {
+  pickerOpen.value = true
+}
+
+function startSwitch(): void {
+  switching.value = true
+}
+
+async function copyRoomId(): Promise<void> {
+  const id = room.value?.roomId
+  if (!id) return
+  const ok = await copyText(id)
+  if (ok) {
+    ElMessage.success('房间号已复制')
+  } else {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 
@@ -309,46 +444,74 @@ function sendRematch(): void {
   ws.send(JSON.stringify({ type: 'REMATCH', payload: {} }))
 }
 
+/** 手动接管：在本页重连（会替换其他标签页的连接，对方收到通知后停止） */
+function resumeHere(): void {
+  const roomId = room.value?.roomId
+  if (!roomId || !myName.value) return
+  replacedNotice.value = false
+  retries = 0
+  connectWS(roomId, myName.value)
+}
+
 function leaveGame(): void {
   router.push('/lobby')
 }
 
 onMounted(async () => {
-  // 刷新后 store 仅水合了 token，需先补齐 userInfo 才能取到 userName
-  if (userStore.isLogin && !userStore.userInfo) {
-    await userStore.fetchProfile()
-  }
-
   const roomId = route.params.roomId as string
-  const playerName = userStore.userInfo?.userName ?? ''
 
-  const data = await chessApi.getRoom(roomId, playerName)
-  if (data.success === false) {
-    ElMessage.error(data.error ?? '进入房间失败')
-    router.push('/lobby')
+  if (!userStore.isLogin) {
+    router.replace('/login?redirect=' + encodeURIComponent('/game/' + roomId))
     return
   }
 
-  if (data.room) room.value = data.room as RoomVO
-  if (data.board) applyBoard(data.board as BoardSnapshot)
-  viewerColor.value = (data.room as RoomVO | undefined)?.viewerColor ?? null
-
-  // 观看者（无座位）时回退为加入房间
-  if (viewerColor.value === null) {
-    const joined = await chessApi.joinRoom(roomId, playerName)
-    if (joined.success) {
-      if (joined.room) room.value = joined.room as RoomVO
-      if (joined.board) applyBoard(joined.board as BoardSnapshot)
-      viewerColor.value = (joined.room as RoomVO | undefined)?.viewerColor ?? null
+  // 刷新后 store 仅水合了 token，需先补齐 userInfo 才能取到 userName
+  if (!userStore.userInfo) {
+    try {
+      await userStore.fetchProfile()
+    } catch {
+      // 下方统一按 userName 缺失处理
     }
   }
+  if (unmounted) return
+  const playerName = userStore.userInfo?.userName ?? ''
+  if (!playerName) {
+    ElMessage.error('用户信息未就绪，请重新登录')
+    router.replace('/lobby')
+    return
+  }
+  myName.value = playerName
+
+  let data: chessApi.RoomData
+  try {
+    data = await chessApi.getRoom(roomId, playerName)
+  } catch {
+    ElMessage.error('进入房间失败')
+    router.replace('/lobby')
+    return
+  }
+  if (!data.success) {
+    ElMessage.error(data.error ?? '进入房间失败')
+    router.replace('/lobby')
+    return
+  }
+  if (unmounted) return
+
+  applyRoomResponse(data)
+  pickerOpen.value = room.value?.status === 'WAITING' && !viewerColor.value
 
   connectWS(roomId, playerName)
 })
 
 onUnmounted(() => {
+  unmounted = true
+  intentionalClose = true
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   if (ws) {
-    // 主动离开时避免触发断开提示
+    // 主动离开时避免触发断开提示与重连
     ws.onclose = null
     ws.onerror = null
     ws.close()
@@ -360,6 +523,17 @@ onUnmounted(() => {
 
 <template>
   <div class="game-page">
+    <!-- 房间号 + 复制 -->
+    <div class="room-bar">
+      <span class="room-id">
+        房间号：<strong>{{ room?.roomId ?? '...' }}</strong>
+      </span>
+      <el-button size="small" @click="copyRoomId">📋 复制</el-button>
+      <el-button size="small" plain class="back-btn" @click="leaveGame">
+        ← 返回大厅
+      </el-button>
+    </div>
+
     <div class="game-layout">
       <!-- 黑方面板 -->
       <div class="side-panel">
@@ -376,6 +550,31 @@ onUnmounted(() => {
 
       <!-- 棋盘 -->
       <div class="board-container">
+        <SeatPicker
+          v-if="showPicker && room"
+          :room="room"
+          :my-name="myName"
+          @select="chooseSeat"
+          @spectate="onSpectate"
+        />
+
+        <div v-if="viewerColor && room?.status === 'WAITING'" class="seat-actions">
+          <el-button size="small" @click="startSwitch">🔁 换个座位</el-button>
+          <el-button size="small" @click="doStandUp">🚶 起身</el-button>
+        </div>
+
+        <div v-if="room && !viewerColor && !showPicker" class="spectate-banner">
+          👀 你正在观战
+          <el-button
+            v-if="room.status === 'WAITING'"
+            size="small"
+            type="primary"
+            @click="reopenPicker"
+          >
+            选座
+          </el-button>
+        </div>
+
         <ChessBoard
           :pieces="pieces"
           :current-turn="currentTurn"
@@ -385,11 +584,22 @@ onUnmounted(() => {
           @cell-click="onCellClick"
         />
         <div class="actions">
-          <el-button :disabled="gameOver" @click="sendUndo">↩️ 悔棋</el-button>
-          <el-button type="danger" :disabled="gameOver" @click="sendResign">
+          <el-button :disabled="gameOver || !viewerColor" @click="sendUndo">
+            ↩️ 悔棋
+          </el-button>
+          <el-button
+            type="danger"
+            :disabled="gameOver || !viewerColor"
+            @click="sendResign"
+          >
             🏳️ 认输
           </el-button>
-          <el-button type="success" :disabled="!gameOver" @click="sendRematch">
+          <el-button
+            v-if="viewerColor"
+            type="success"
+            :disabled="!gameOver"
+            @click="sendRematch"
+          >
             🔄 再来一局
           </el-button>
           <el-button @click="leaveGame">返回大厅</el-button>
@@ -430,7 +640,12 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="!connected" class="conn-banner">⏳ 连接中 / 已断开</div>
+    <div v-if="replacedNotice" class="replaced-banner">
+      ⚠️ 该房间已在其他标签页/窗口打开，本页已停止连接
+      <el-button size="small" type="primary" @click="resumeHere">在此页继续</el-button>
+    </div>
+
+    <div v-if="!connected && !replacedNotice" class="conn-banner">⏳ 连接中 / 已断开</div>
 
     <!-- 对局结束弹层 -->
     <div v-if="gameOver" class="modal-overlay">
@@ -438,7 +653,9 @@ onUnmounted(() => {
         <h2>{{ winnerText }}</h2>
         <p>{{ gameReasonText }}</p>
         <div class="modal-actions">
-          <el-button type="success" @click="sendRematch">🔄 再来一局</el-button>
+          <el-button v-if="viewerColor" type="success" @click="sendRematch">
+            🔄 再来一局
+          </el-button>
           <el-button @click="leaveGame">返回大厅</el-button>
         </div>
       </div>
@@ -450,6 +667,24 @@ onUnmounted(() => {
 .game-page {
   min-height: 100vh;
   padding: 24px;
+}
+
+.room-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: 1100px;
+  margin: 0 auto 16px;
+  font-size: 14px;
+  color: #ccc;
+
+  .room-id strong {
+    color: #fff;
+    font-size: 16px;
+    letter-spacing: 1px;
+    user-select: all;
+  }
 }
 
 .game-layout {
@@ -554,6 +789,24 @@ onUnmounted(() => {
   gap: 16px;
 }
 
+.seat-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.spectate-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: rgba(243, 156, 18, 0.15);
+  border: 1px solid rgba(243, 156, 18, 0.4);
+  color: #f39c12;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -595,6 +848,10 @@ onUnmounted(() => {
     color: #ccc;
   }
 
+  &.spectator {
+    color: #7f8fa6;
+  }
+
   &.system {
     color: #f39c12;
     font-style: italic;
@@ -611,6 +868,26 @@ onUnmounted(() => {
   text-align: center;
   font-size: 13px;
   color: #f39c12;
+}
+
+.replaced-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: 1100px;
+  margin: 12px auto 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.45);
+  color: #e74c3c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.back-btn {
+  margin-left: auto;
 }
 
 .modal-overlay {

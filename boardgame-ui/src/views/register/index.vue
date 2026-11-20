@@ -5,6 +5,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 
 import { CLIENT_ID, getCaptcha, register } from '@/api/auth'
 import type { RegisterBody } from '@/api/auth'
+import logoWordmark from '@/assets/logo-wordmark.png'
 
 const router = useRouter()
 
@@ -23,9 +24,24 @@ const captchaImg = ref('')
 const loading = ref(false)
 
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  confirmPassword: [{ required: true, message: '请再次输入密码', trigger: 'blur' }],
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 2, max: 30, message: '用户名长度需为 2-30 个字符', trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 5, max: 30, message: '密码长度需为 5-30 个字符', trigger: 'blur' },
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (value !== form.password) callback(new Error('两次输入的密码不一致'))
+        else callback()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 /** 获取/刷新图形验证码 */
@@ -33,20 +49,23 @@ async function refreshCaptcha(): Promise<void> {
   const data = await getCaptcha()
   captchaEnabled.value = data.captchaEnabled
   if (data.captchaEnabled) {
-    captchaImg.value = data.img
+    captchaImg.value = 'data:image/png;base64,' + data.img
     form.uuid = data.uuid
   }
 }
 
-onMounted(refreshCaptcha)
+onMounted(() => {
+  refreshCaptcha().catch(() => ElMessage.error('验证码加载失败，请重试'))
+})
+
+/** 手动点击刷新验证码：失败仅提示，避免未处理 rejection */
+function onCaptchaClick(): void {
+  refreshCaptcha().catch(() => ElMessage.error('验证码刷新失败，请重试'))
+}
 
 /** 提交注册 */
 async function handleSubmit(): Promise<void> {
   if (!formRef.value) return
-  if (form.password !== form.confirmPassword) {
-    ElMessage.error('两次输入的密码不一致')
-    return
-  }
   try {
     await formRef.value.validate()
   } catch {
@@ -72,6 +91,13 @@ async function handleSubmit(): Promise<void> {
     router.push('/login')
   } catch (error) {
     ElMessage.error((error as Error).message || '注册失败')
+    // 验证码一次性：失败后必须换新，否则重试必报"验证码已失效"
+    // 刷新自身也可能失败（如网络中断）：兜底提示，避免未处理 rejection
+    try {
+      await refreshCaptcha()
+    } catch {
+      ElMessage.error('验证码刷新失败，请重试')
+    }
   } finally {
     loading.value = false
   }
@@ -80,6 +106,7 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div class="auth-page">
+    <img class="auth-logo" :src="logoWordmark" alt="DiceGo" />
     <el-card class="auth-card">
       <template #header>
         <h2 class="auth-title">注册</h2>
@@ -118,7 +145,7 @@ async function handleSubmit(): Promise<void> {
               :src="captchaImg"
               alt="验证码"
               title="点击刷新"
-              @click="refreshCaptcha"
+              @click="onCaptchaClick"
             />
           </div>
         </el-form-item>
@@ -142,10 +169,16 @@ async function handleSubmit(): Promise<void> {
 <style scoped lang="scss">
 .auth-page {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 20px;
   min-height: 100vh;
   padding: 24px;
+}
+
+.auth-logo {
+  height: 44px;
 }
 
 .auth-card {

@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useUserStore } from '@/store/user'
+import logoWordmark from '@/assets/logo-wordmark.png'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -31,7 +32,7 @@ const games: GameCard[] = [
     desc: '楚河汉界，运筹帷幄',
     icon: '♜',
     playable: true,
-    route: '/lobby',
+    route: '/lobby?zone=abstract&game=xiangqi',
   },
   {
     key: 'go',
@@ -61,14 +62,12 @@ function playGame(route: string): void {
   <div class="home-page">
     <header class="top-bar">
       <div class="logo">
-        <span class="logo-mark">弈</span>
-        <span class="logo-text">棋盘在线</span>
+        <img class="logo-img" :src="logoWordmark" alt="DiceGo" />
       </div>
 
       <div class="top-actions">
         <template v-if="userStore.isLogin">
           <span class="nickname">{{ userStore.userInfo?.nickName }}</span>
-          <el-button plain @click="userStore.logout()">退出</el-button>
         </template>
         <template v-else>
           <el-button plain @click="router.push('/login')">登录</el-button>
@@ -114,22 +113,8 @@ function playGame(route: string): void {
   gap: 10px;
 }
 
-.logo-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: var(--color-primary);
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.logo-text {
-  font-size: 20px;
-  font-weight: 600;
+.logo-img {
+  height: 36px;
 }
 
 .top-actions {

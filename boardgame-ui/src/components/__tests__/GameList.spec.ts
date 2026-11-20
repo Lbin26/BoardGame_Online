@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import GameList from '@/components/GameList.vue'
+import { findZone, gamesInZone } from '@/constants/catalog'
+
+const abstract = findZone('abstract')!
+describe('GameList', () => {
+  it('emits select only for playable games', async () => {
+    const w = mount(GameList, { props: { zone: abstract, games: gamesInZone('abstract') } })
+    const cards = w.findAll('.game-entry')
+    expect(cards).toHaveLength(3)
+    await cards[1].trigger('click') // 围棋 敬请期待
+    expect(w.emitted('select')).toBeUndefined()
+    await cards[0].trigger('click') // 象棋
+    expect(w.emitted('select')![0]).toEqual(['xiangqi'])
+  })
+  it('shows user-given mechanism tags on placeholder cards', () => {
+    const w = mount(GameList, { props: { zone: findZone('card')!, games: gamesInZone('card') } })
+    expect(w.findAll('.game-tag').map((t) => t.text())).toEqual(['引擎构建', '成套收集'])
+    expect(w.text()).toContain('敬请期待')
+  })
+  it('renders preparation empty state for zones without games', () => {
+    const w = mount(GameList, { props: { zone: findZone('party')!, games: [] } })
+    expect(w.find('.zone-empty').exists()).toBe(true)
+    expect(w.find('.zone-empty').text()).toContain('筹备中')
+    expect(w.findAll('.game-entry')).toHaveLength(0)
+  })
+})

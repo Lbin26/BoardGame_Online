@@ -15,10 +15,19 @@ export interface RoomListData {
   playingCount: number
 }
 
-/** 创建/加入/查询房间返回体 */
+/** 房间信息（后端 RoomVO） */
+export interface RoomInfo {
+  roomId: string
+  redPlayerName: string | null
+  blackPlayerName: string | null
+  status: string
+  viewerColor: 'RED' | 'BLACK' | null
+}
+
+/** 创建/选座/起身/查询房间返回体 */
 export interface RoomData {
   success: boolean
-  room?: unknown
+  room?: RoomInfo
   board?: unknown
   error?: string
 }
@@ -46,9 +55,18 @@ export function createRoom(playerName: string): Promise<RoomData> {
   return rawRequest.post('/api/chess/rooms', { playerName })
 }
 
-/** 加入房间 */
-export function joinRoom(roomId: string, playerName: string): Promise<RoomData> {
-  return rawRequest.post('/api/chess/rooms/join', { roomId, playerName })
+/** 手动选座（成功失败都返回最新 room+board，竞争败者据此重同步） */
+export function takeSeat(
+  roomId: string,
+  playerName: string,
+  color: 'RED' | 'BLACK',
+): Promise<RoomData> {
+  return rawRequest.post(`/api/chess/rooms/${roomId}/seat`, { playerName, color })
+}
+
+/** 起身离座（仅等待中） */
+export function standUp(roomId: string, playerName: string): Promise<RoomData> {
+  return rawRequest.post(`/api/chess/rooms/${roomId}/stand`, { playerName })
 }
 
 /** 查询单个房间（含棋盘快照），用于进入房间/刷新页面 */
