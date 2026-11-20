@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 手动选座模型测试：座位竞争、换座、起身、重开、在线追踪 */
-class ChessRoomSeatTest {
+class XiangqiRoomSeatTest {
 
     private XiangqiRoom newRoom() {
         return new XiangqiRoom("R1");

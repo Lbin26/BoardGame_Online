@@ -21,7 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /** WS 连接语义：陌生人=旁观者、自身视角同步、广播中立、重复连接替换 */
-class ChessWebSocketHandlerTest {
+class XiangqiWebSocketHandlerTest {
 
     private GameRoomManager<XiangqiRoom> roomManager;
     private XiangqiWebSocketHandler handler;

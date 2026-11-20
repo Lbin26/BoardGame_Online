@@ -18,8 +18,8 @@ export interface UseRoomOptions {
   listRooms: () => Promise<RoomListResult>
   /** 轮询间隔 ms，默认 5000；传 0 不启动轮询 */
   pollIntervalMs?: number
-  /** 非静默失败时的提示回调（视图负责 toast） */
-  onError?: (message: string) => void
+  /** 非静默失败时把原始错误交给视图（视图负责提取文案并 toast） */
+  onError?: (error: unknown) => void
 }
 
 /** 房间大厅：列表拉取 + 可见性轮询；创建/加入跳转留在视图（导航各游戏不同） */
@@ -47,10 +47,10 @@ export function useRoom(options: UseRoomOptions) {
       waitingCount.value = data.waitingCount ?? 0
       playingCount.value = data.playingCount ?? 0
       listError.value = false
-    } catch {
+    } catch (error) {
       if (!silent) {
         listError.value = true
-        options.onError?.('获取房间列表失败，请稍后重试')
+        options.onError?.(error)
       }
     } finally {
       refreshing.value = false

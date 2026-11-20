@@ -21,6 +21,15 @@ describe('useChat', () => {
     expect(chatText.value).toBe('')
   })
 
+  it('发送失败（send 返回 false）时保留输入不丢失', () => {
+    const send = vi.fn(() => false)
+    const { chatText, sendChat } = useChat({ send })
+    chatText.value = '断线时打的字'
+    sendChat()
+    expect(send).toHaveBeenCalledWith('断线时打的字')
+    expect(chatText.value).toBe('断线时打的字')
+  })
+
   it('收到消息追加到列表', async () => {
     const { chatMessages, addChatMsg } = useChat({ send: vi.fn() })
     addChatMsg('system', '进入房间')

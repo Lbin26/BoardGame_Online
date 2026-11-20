@@ -27,7 +27,7 @@ const {
   stopPolling,
 } = useRoom({
   listRooms: () => chessApi.listRooms(),
-  onError: (msg) => ElMessage.error(msg),
+  onError: (error) => ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试')),
 })
 
 /** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 象棋房间层） */

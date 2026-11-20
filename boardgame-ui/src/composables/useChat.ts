@@ -7,8 +7,8 @@ export interface ChatMessage {
 }
 
 export interface UseChatOptions {
-  /** 实际发送函数（如 WS send） */
-  send: (text: string) => void
+  /** 实际发送函数（如 WS send）；返回 false 表示未发出（如连接断开），输入保留不丢失 */
+  send: (text: string) => boolean | void
   /** 聊天身份样式（红方/黑方/旁观/系统），默认按 who 映射 */
   classifyWho?: (who: string) => string
   /** 消息容器，追加后自动滚到底部 */
@@ -36,7 +36,7 @@ export function useChat(options: UseChatOptions) {
   function sendChat(): void {
     const text = chatText.value.trim()
     if (!text) return
-    options.send(text)
+    if (options.send(text) === false) return
     chatText.value = ''
   }
 

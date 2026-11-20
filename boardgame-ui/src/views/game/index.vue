@@ -55,9 +55,13 @@ const inCheck = ref(false)
 
 const chatBox = ref<HTMLElement | null>(null)
 
-/** WS 就绪时发送 JSON 消息 */
-function wsSend(msg: object): void {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
+/** WS 就绪时发送 JSON 消息；返回是否发出 */
+function wsSend(msg: object): boolean {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg))
+    return true
+  }
+  return false
 }
 
 const { chatMessages, chatText, addChatMsg, sendChat } = useChat({

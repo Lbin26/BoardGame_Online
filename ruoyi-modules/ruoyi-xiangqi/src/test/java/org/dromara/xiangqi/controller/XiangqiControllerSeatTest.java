@@ -17,7 +17,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /** 选座/起身接口校验与竞争重同步契约 */
-class ChessControllerSeatTest {
+class XiangqiControllerSeatTest {
 
     private GameRoomManager<XiangqiRoom> roomManager;
     private XiangqiWebSocketHandler handler;

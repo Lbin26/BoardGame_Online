@@ -466,10 +466,24 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!--  桌游公共模块  -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-game-common</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!--  桌游对战模块  -->
             <dependency>
                 <groupId>org.dromara</groupId>
-                <artifactId>ruoyi-boardgame</artifactId>
+                <artifactId>ruoyi-xiangqi</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <!--  桌游对战模块（骰子游戏骨架） -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-dicego</artifactId>
                 <version>${revision}</version>
             </dependency>
 
