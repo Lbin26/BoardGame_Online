@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { RoomInfo } from '@/api/chess'
+import type { RoomInfo } from '@/api/xiangqi'
 
 const props = defineProps<{
   room: RoomInfo

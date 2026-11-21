@@ -16,9 +16,9 @@ describe('catalog zones', () => {
 })
 
 describe('catalog games', () => {
-  it('places the 4 placeholder games with verbatim mechanism tags', () => {
+  it('places the 3 placeholder games with verbatim mechanism tags and playable splendor', () => {
     const by = (k: string) => GAMES.find((g) => g.key === k)!
-    expect(by('splendor')).toMatchObject({ zone: 'card', playable: false, mechanisms: ['引擎构建', '成套收集'] })
+    expect(by('splendor')).toMatchObject({ zone: 'card', playable: true, mechanisms: ['引擎构建', '成套收集'] })
     expect(by('diceThrone')).toMatchObject({ zone: 'narrative', playable: false, mechanisms: ['骰子驱动', '角色能力（不对称）', '卡牌辅助'] })
     expect(by('avalon')).toMatchObject({ zone: 'narrative', playable: false, mechanisms: ['隐藏身份', '推理/演绎', '投票'] })
     expect(by('brass')).toMatchObject({ zone: 'heavy', playable: false, mechanisms: ['网络构建', '经济/资源管理', '手牌管理（轻卡驱）'] })
@@ -26,6 +26,7 @@ describe('catalog games', () => {
     expect(by('go').playable).toBe(false)
     expect(by('gomoku').playable).toBe(false)
     expect(gamesInZone('abstract').map((g) => g.key)).toEqual(['xiangqi', 'go', 'gomoku'])
+    expect(gamesInZone('card').map((g) => g.key)).toEqual(['splendor'])
     expect(gamesInZone('party')).toEqual([])
   })
 })
@@ -35,6 +36,7 @@ describe('resolveLevel', () => {
     [{}, 0],
     [{ zone: 'abstract' }, 1],
     [{ zone: 'abstract', game: 'xiangqi' }, 2],
+    [{ zone: 'card', game: 'splendor' }, 2],  // Splendor 已可玩 → level 2
     [{ zone: 'abstract', game: 'go' }, 1],          // 已知但不可玩 → level 1
     [{ zone: 'card', game: 'xiangqi' }, 1],         // 错配 → level 1
     [{ zone: 'nope', game: 'xiangqi' }, 0],

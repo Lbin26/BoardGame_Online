@@ -12,6 +12,26 @@
   --el-color-primary-light-8: #fbdadf;
   --el-color-primary-light-9: #fdecef;
   --el-color-primary-dark-2: #ba374d;
+
+  /* DiceGo 大厅设计 token(设计稿 2026-11-20 确认;oklch 相对色已预计算为静态等值,保旧浏览器兼容) */
+  --panel: #20203a;
+  --ink: #f2f0eb;
+  --muted: #9aa0b4;
+  --line: rgba(242, 240, 235, 0.16);
+  --input-bg: #151529;
+  --accent-soft: rgba(233, 69, 96, 0.14);
+  --accent-line: rgba(233, 69, 96, 0.4);
+  --accent-hover: rgba(233, 69, 96, 0.55);
+  --accent-seal: rgba(233, 69, 96, 0.35);
+  --danger: #ba374d;
+  --radius: 6px;
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 18px 44px -16px rgba(0, 0, 0, 0.55);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-display: 'ZCOOL QingKe HuangYou', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body:
+    'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial,
+    sans-serif;
 }
 
 html,

@@ -1,0 +1,34 @@
+﻿schemaVersion: 1
+meta:
+  key: miniGame
+  name: 迷你测试游戏
+  players: { min: 2, max: 4 }
+  durationMin: 30
+mechanisms:
+  - worker-placement
+components:
+  resources:
+    - key: gold
+      name: 金币
+  dice:
+    - key: d6
+      faces: [1, 2, 3, 4, 5, 6]
+      count: 2
+turnStructure:
+  phases:
+    - key: income
+      name: 收入
+      summary: 每回合获得金币
+subsystems:
+  economy:
+    resources: [gold]
+    initial: { gold: 5 }
+    perTurn:
+      - resource: gold
+        produce: 2
+        consume: 1
+    actions:
+      - key: buy
+        cost: { gold: 3 }
+        gain: { gold: 0 }
+        vp: 1

@@ -22,7 +22,6 @@
         <module>ruoyi-system</module>
         <module>ruoyi-workflow</module>
         <module>ruoyi-ai</module>
-        <module>ruoyi-boardgame</module>
     </modules>
 
 </project>

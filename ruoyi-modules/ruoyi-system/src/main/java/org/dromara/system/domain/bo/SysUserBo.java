@@ -2,6 +2,8 @@ package org.dromara.system.domain.bo;
 
 import io.github.linpeilie.annotations.AutoMapper;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -76,6 +78,19 @@ public class SysUserBo implements Serializable {
      * 用户性别（0男 1女 2未知）
      */
     private String gender;
+
+    /**
+     * 年龄（DiceGo 个人资料扩展）
+     */
+    @Min(value = 1, message = "年龄必须大于 0")
+    @Max(value = 150, message = "年龄不能超过 150")
+    private Integer age;
+
+    /**
+     * 偏好游戏类型分区 key，逗号分隔（DiceGo 个人资料扩展）
+     */
+    @Size(max = 255, message = "偏好游戏类型长度不能超过{max}个字符")
+    private String favGameTypes;
 
     /**
      * 头像 OSS ID

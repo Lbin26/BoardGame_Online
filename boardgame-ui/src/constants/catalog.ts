@@ -35,8 +35,9 @@ export const GAMES: Game[] = [
     key: 'splendor',
     name: '璀璨宝石 Splendor',
     zone: 'card',
-    playable: false,
-    desc: '敬请期待',
+    playable: true,
+    desc: '引擎构建 · 成套收集 · 2-4 人',
+    players: 4,
     mechanisms: ['引擎构建', '成套收集'],
   },
   {
