@@ -33,6 +33,7 @@ class FakeWebSocket {
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
+  back: vi.fn(),
   copyText: vi.fn(),
   store: {
     isLogin: true,
@@ -50,7 +51,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { roomId: 'ABC123' } }),
-  useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+  useRouter: () => ({ push: mocks.push, replace: mocks.replace, back: mocks.back }),
 }))
 vi.mock('@/store/user', () => ({ useUserStore: () => mocks.store }))
 vi.mock('@/api/xiangqi', () => mocks.api)
@@ -116,6 +117,14 @@ describe('room bar navigation', () => {
     expect(back).toBeDefined()
     await back!.trigger('click')
     expect(mocks.push).toHaveBeenCalledWith('/lobby')
+  })
+
+  it('room bar has a back-one-page button next to back-to-lobby', async () => {
+    const wrapper = mountGame()
+    await flushPromises()
+    const buttons = wrapper.find('.room-bar').findAll('button').map((b) => b.text().trim())
+    expect(buttons).toContain('← 返回上一页')
+    expect(buttons).toContain('← 返回大厅')
   })
 })
 

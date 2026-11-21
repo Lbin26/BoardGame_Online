@@ -2,8 +2,13 @@ import { computed, ref } from 'vue'
 
 export interface RoomListItem {
   roomId: string
+  /** 象棋行 */
   redPlayerName?: string | null
   blackPlayerName?: string | null
+  /** Splendor 行 */
+  hostName?: string
+  maxPlayers?: number
+  seatedCount?: number
   status: string
 }
 

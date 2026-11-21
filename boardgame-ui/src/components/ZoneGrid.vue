@@ -6,7 +6,7 @@ import { ZONE_SEALS } from '@/constants/zoneSeals'
 defineProps<{ zones: Zone[] }>()
 defineEmits<{ select: [zoneKey: string] }>()
 
-/** 分区棋种统计:徽章诚实标注(可玩 / 敬请期待 / 规划中) */
+/** 分区桌游统计:徽章诚实标注(可玩 / 敬请期待 / 规划中) */
 function zoneMeta(zone: Zone): { count: number; live: number } {
   const games = gamesInZone(zone.key)
   return { count: games.length, live: games.filter((g) => g.playable).length }
@@ -24,13 +24,13 @@ function zoneMeta(zone: Zone): { count: number; live: number } {
       :style="{ '--i': i + 2 }"
       @click="$emit('select', zone.key)"
     >
-      <span class="zone-seal">{{ ZONE_SEALS[zone.key] ?? '棋' }}</span>
+      <span class="zone-seal">{{ ZONE_SEALS[zone.key] ?? '桌' }}</span>
       <span class="zone-name">{{ zone.name }}</span>
       <span class="zone-tags">
         <span v-for="m in zone.mechanisms" :key="m" class="zone-tag">{{ m }}</span>
       </span>
       <span class="zone-foot">
-        {{ zoneMeta(zone).count ? `${zoneMeta(zone).count} 款棋种` : '暂无棋种' }}
+        {{ zoneMeta(zone).count ? `${zoneMeta(zone).count} 款桌游` : '暂无桌游' }}
         <span class="zone-badge" :class="zoneMeta(zone).live ? 'badge-live' : 'badge-soon'">
           {{
             zoneMeta(zone).live

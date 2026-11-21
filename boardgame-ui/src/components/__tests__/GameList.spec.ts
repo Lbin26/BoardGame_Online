@@ -15,9 +15,27 @@ describe('GameList', () => {
     expect(w.emitted('select')![0]).toEqual(['xiangqi'])
   })
   it('shows user-given mechanism tags on placeholder cards', () => {
+    const w = mount(GameList, { props: { zone: findZone('narrative')!, games: gamesInZone('narrative') } })
+    expect(w.findAll('.game-tag').map((t) => t.text())).toEqual([
+      '骰子驱动', '角色能力（不对称）', '卡牌辅助',
+      '隐藏身份', '推理/演绎', '投票',
+    ])
+    expect(w.text()).toContain('敬请期待')
+  })
+  it('marks the playable splendor card with badge and entry hint', () => {
     const w = mount(GameList, { props: { zone: findZone('card')!, games: gamesInZone('card') } })
     expect(w.findAll('.game-tag').map((t) => t.text())).toEqual(['引擎构建', '成套收集'])
-    expect(w.text()).toContain('敬请期待')
+    expect(w.find('.badge-playable').text()).toBe('可玩')
+    expect(w.text()).toContain('进入房间层 →')
+    expect(w.text()).not.toContain('敬请期待')
+  })
+  it('shows rules link only for games with a rule book and emits rules event', async () => {
+    const w = mount(GameList, { props: { zone: findZone('abstract')!, games: gamesInZone('abstract') } })
+    const links = w.findAll('.rules-link')
+    expect(links).toHaveLength(1) // 象棋有规则书，围棋/五子棋没有
+    await links[0].trigger('click')
+    expect(w.emitted('rules')![0]).toEqual(['xiangqi'])
+    expect(w.emitted('select')).toBeUndefined() // .stop 阻止触发整卡进入房间
   })
   it('renders preparation empty state for zones without games', () => {
     const w = mount(GameList, { props: { zone: findZone('party')!, games: [] } })

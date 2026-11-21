@@ -87,6 +87,8 @@ create table sys_user (
     email             varchar(50)     default ''                 comment '用户邮箱',
     phone_number      varchar(11)     default ''                 comment '手机号码',
     gender            char(1)         default '0'                comment '用户性别（0男 1女 2未知）',
+    age               int(11)         default null               comment '年龄（DiceGo 个人资料扩展）',
+    fav_game_types    varchar(255)    default ''                 comment '偏好游戏类型分区 key，逗号分隔（DiceGo 个人资料扩展）',
     avatar            bigint(20)                                 comment '头像地址',
     password          varchar(100)    default ''                 comment '密码',
     status            char(1)         default '0'                comment '账号状态（0正常 1停用）',

@@ -466,24 +466,24 @@
                 <version>${revision}</version>
             </dependency>
 
-            <!--  桌游公共模块  -->
+            <!--  桌游游戏公共模块  -->
             <dependency>
                 <groupId>org.dromara</groupId>
-                <artifactId>ruoyi-game-common</artifactId>
+                <artifactId>dicego-game-common</artifactId>
                 <version>${revision}</version>
             </dependency>
 
-            <!--  桌游对战模块  -->
+            <!--  桌游对战模块：中国象棋  -->
             <dependency>
                 <groupId>org.dromara</groupId>
-                <artifactId>ruoyi-xiangqi</artifactId>
+                <artifactId>dicego-xiangqi</artifactId>
                 <version>${revision}</version>
             </dependency>
 
-            <!--  桌游对战模块（骰子游戏骨架） -->
+            <!--  桌游对战模块：宝石商人（骨架） -->
             <dependency>
                 <groupId>org.dromara</groupId>
-                <artifactId>ruoyi-dicego</artifactId>
+                <artifactId>dicego-splendor</artifactId>
                 <version>${revision}</version>
             </dependency>
 
@@ -506,6 +506,8 @@
         <module>ruoyi-extend</module>
         <!-- 业务模块 -->
         <module>ruoyi-modules</module>
+        <!-- 游戏模块 -->
+        <module>dicego-games</module>
         <!-- api模块 -->
         <module>ruoyi-api</module>
     </modules>

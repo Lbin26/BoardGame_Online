@@ -22,6 +22,9 @@ export interface RoomInfo {
   blackPlayerName: string | null
   status: string
   viewerColor: 'RED' | 'BLACK' | null
+  /** 房主名：旧房间/测试 mock 可能缺省 */
+  hostName?: string | null
+  afkPlayers?: string[]
 }
 
 /** 创建/选座/起身/查询房间返回体 */

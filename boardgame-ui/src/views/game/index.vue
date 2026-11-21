@@ -7,10 +7,14 @@ import * as chessApi from '@/api/xiangqi'
 import type { RoomInfo } from '@/api/xiangqi'
 import ChessBoard from '@/components/ChessBoard.vue'
 import SeatPicker from '@/components/SeatPicker.vue'
+import { useAfk } from '@/composables/useAfk'
 import { useChat } from '@/composables/useChat'
+import { useHeartbeat } from '@/composables/useHeartbeat'
+import { forgetLastRoom, rememberLastRoom } from '@/composables/useLastRoom'
 import { useUserStore } from '@/store/user'
 import { getPieceAt } from '@/utils/board'
 import { copyText } from '@/utils/clipboard'
+import { goBackOrLobby } from '@/utils/navigation'
 
 /** 棋盘上的一个棋子（后端 ChessPieceVO） */
 interface ChessPiece {
@@ -59,10 +63,22 @@ const chatBox = ref<HTMLElement | null>(null)
 function wsSend(msg: object): boolean {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg))
+    const t = (msg as { type?: string }).type
+    if (t && t !== 'HEARTBEAT' && t !== 'AFK') noteActivity()
     return true
   }
   return false
 }
+
+/** 心跳保活：只制造流量防空闲掐断，判活仍靠 onclose + 重连 */
+const { start: startHeartbeat, stop: stopHeartbeat } = useHeartbeat(() =>
+  wsSend({ type: 'HEARTBEAT', payload: {} }),
+)
+
+/** 无操作检测：60s 无交互上报 AFK，恢复交互上报 ACTIVE */
+const { noteActivity, start: startAfk, stop: stopAfk } = useAfk({
+  send: (active) => wsSend({ type: active ? 'ACTIVE' : 'AFK', payload: {} }),
+})
 
 const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
   send: (text) => wsSend({ type: 'CHAT', payload: { text } }),
@@ -87,12 +103,21 @@ const switching = ref(false)
 
 let ws: WebSocket | null = null
 let intentionalClose = false
+let roomClosedByServer = false
 /** 挂载 await 期间用户可能已离开：续体不得再建 WS/改状态 */
 let unmounted = false
 let retries = 0
 let reconnectTimer: number | null = null
 const MAX_RETRIES = 5
 const RECONNECT_DELAY_MS = 2000
+
+/** 是否房主（建房者） */
+const isHost = computed(() => !!room.value?.hostName && room.value.hostName === myName.value)
+
+/** 玩家是否待机 */
+function isPlayerAfk(name: string | null | undefined): boolean {
+  return !!name && !!room.value?.afkPlayers?.includes(name)
+}
 
 /** 是否红方视角轮到自己 */
 const isRedTurn = computed(
@@ -185,6 +210,8 @@ function connectWS(roomId: string, playerName: string): void {
     connected.value = true
     replacedNotice.value = false
     retries = 0
+    startHeartbeat()
+    startAfk()
   }
   ws.onmessage = (evt) => {
     try {
@@ -195,7 +222,10 @@ function connectWS(roomId: string, playerName: string): void {
   }
   ws.onclose = (evt: CloseEvent) => {
     connected.value = false
+    stopHeartbeat()
+    stopAfk()
     clearSelection()
+    if (roomClosedByServer) return
     if (intentionalClose) return
     // 同房间同名连接被新标签页替换：不重连（否则两页互踢成死循环），提示手动接管
     if (evt?.reason === 'replaced by new connection') {
@@ -286,6 +316,24 @@ function handleWSMessage(msg: any): void {
     case 'PLAYER_LEAVE':
       addChatMsg('system', `${msg.playerName} 离开了房间`)
       break
+    case 'PLAYER_AFK': {
+      const name = msg.playerName as string
+      const list = room.value?.afkPlayers ? [...room.value.afkPlayers] : []
+      const idx = list.indexOf(name)
+      if (p?.afk && idx < 0) list.push(name)
+      if (!p?.afk && idx >= 0) list.splice(idx, 1)
+      if (room.value) room.value = { ...room.value, afkPlayers: list }
+      addChatMsg('system', `${name} ${p?.afk ? '进入待机' : '恢复了操作'}`)
+      break
+    }
+    case 'ROOM_CLOSED':
+      roomClosedByServer = true
+      intentionalClose = true
+      stopAfk()
+      forgetLastRoom()
+      ElMessage.warning(p?.reason === '全员待机' ? '全员待机，房间已关闭' : '房主已解散房间')
+      router.replace('/lobby')
+      break
     case 'CHAT':
       addChatMsg(msg.playerName, p?.text ?? '')
       break
@@ -349,6 +397,20 @@ async function copyRoomId(): Promise<void> {
   } else {
     ElMessage.error('复制失败，请手动复制')
   }
+}
+
+/** 房主解散房间：二次确认后发 WS，服务端广播 ROOM_CLOSED 并断开所有连接 */
+async function dissolveRoom(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('解散后所有玩家将返回大厅，对局不会保存。确定解散吗？', '解散房间', {
+      type: 'warning',
+      confirmButtonText: '解散',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  wsSend({ type: 'DISSOLVE_ROOM', payload: {} })
 }
 
 /** 棋盘点击：选中己方棋子 / 走子 / 清空选中 */
@@ -485,6 +547,7 @@ onMounted(async () => {
   applyRoomResponse(data)
   pickerOpen.value = room.value?.status === 'WAITING' && !viewerColor.value
 
+  rememberLastRoom('xiangqi', roomId, playerName)
   connectWS(roomId, playerName)
 })
 
@@ -514,6 +577,13 @@ onUnmounted(() => {
         房间号：<strong>{{ room?.roomId ?? '...' }}</strong>
       </span>
       <el-button size="small" @click="copyRoomId">📋 复制</el-button>
+      <el-button size="small" plain @click="router.push('/rules/xiangqi')">📖 规则</el-button>
+      <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">
+        🗑 解散房间
+      </el-button>
+      <el-button size="small" plain class="back-btn" @click="goBackOrLobby(router)">
+        ← 返回上一页
+      </el-button>
       <el-button size="small" plain class="back-btn" @click="leaveGame">
         ← 返回大厅
       </el-button>
@@ -525,7 +595,10 @@ onUnmounted(() => {
         <div class="avatar avatar-black">
           {{ (room?.blackPlayerName ?? '?').charAt(0).toUpperCase() }}
         </div>
-        <div class="player-name">{{ room?.blackPlayerName ?? '等待玩家...' }}</div>
+        <div class="player-name">
+          {{ room?.blackPlayerName ?? '等待玩家...' }}
+          <span v-if="isPlayerAfk(room?.blackPlayerName)" class="afk-tag">💤 待机</span>
+        </div>
         <div class="player-tag tag-black">⚫ 黑方</div>
         <div class="turn" :class="isBlackTurn ? 'turn-now' : 'turn-wait'">
           {{ isBlackTurn ? '🎯 轮到你了' : '⏳ 等待中' }}
@@ -596,7 +669,10 @@ onUnmounted(() => {
         <div class="avatar avatar-red">
           {{ (room?.redPlayerName ?? '?').charAt(0).toUpperCase() }}
         </div>
-        <div class="player-name">{{ room?.redPlayerName ?? '等待玩家...' }}</div>
+        <div class="player-name">
+          {{ room?.redPlayerName ?? '等待玩家...' }}
+          <span v-if="isPlayerAfk(room?.redPlayerName)" class="afk-tag">💤 待机</span>
+        </div>
         <div class="player-tag tag-red">🔴 红方</div>
         <div class="turn" :class="isRedTurn ? 'turn-now' : 'turn-wait'">
           {{ isRedTurn ? '🎯 轮到你了' : '⏳ 等待中' }}
@@ -720,6 +796,21 @@ onUnmounted(() => {
 .player-name {
   font-size: 16px;
   font-weight: 600;
+}
+
+/* 待机标记（游戏页深色底） */
+.afk-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #f1c40f;
+  background: rgba(241, 196, 15, 0.14);
+  border: 1px solid rgba(241, 196, 15, 0.4);
+  border-radius: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .player-tag {

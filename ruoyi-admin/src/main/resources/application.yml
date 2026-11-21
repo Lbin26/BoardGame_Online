@@ -113,6 +113,9 @@ security:
     - /ws/chess
     - /ws/chess/**
     - /api/chess/**
+    - /ws/splendor
+    - /ws/splendor/**
+    - /api/splendor/**
 
 # MyBatisPlus配置
 # https://baomidou.com/config/

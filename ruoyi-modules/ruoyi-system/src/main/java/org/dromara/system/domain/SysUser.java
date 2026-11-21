@@ -63,6 +63,16 @@ public class SysUser extends BaseEntity {
     private String gender;
 
     /**
+     * 年龄（DiceGo 个人资料扩展）
+     */
+    private Integer age;
+
+    /**
+     * 偏好游戏类型分区 key，逗号分隔（DiceGo 个人资料扩展）
+     */
+    private String favGameTypes;
+
+    /**
      * 用户头像
      */
     private Long avatar;

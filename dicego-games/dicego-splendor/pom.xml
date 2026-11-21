@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>dicego-games</artifactId>
+        <version>${revision}</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>dicego-splendor</artifactId>
+
+    <description>
+        桌游模块 - 宝石商人（Splendor）多人对战（骨架）
+    </description>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>dicego-game-common</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- 卡牌/贵族种子表读取（splendor_card / splendor_noble，D4：DB 种子 + 启动缓存） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-mybatis</artifactId>
+        </dependency>
+
+        <!-- REST 白名单路由上仍可按 Bearer token 还原登录用户（M5：对局落库绑定 user_id） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-satoken</artifactId>
+        </dependency>
+
+    </dependencies>
+
+</project>

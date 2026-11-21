@@ -73,7 +73,7 @@ async function handleSubmit(): Promise<void> {
   try {
     await userStore.login(body)
     ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || '/'
+    const redirect = (route.query.redirect as string) || '/lobby'
     router.push(redirect)
   } catch (error) {
     ElMessage.error((error as Error).message || '登录失败')

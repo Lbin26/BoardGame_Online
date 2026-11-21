@@ -7,6 +7,7 @@ import Lobby from '@/views/lobby/index.vue'
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
+  back: vi.fn(),
   route: { query: {} as Record<string, string> },
   store: {
     isLogin: true,
@@ -19,14 +20,22 @@ const mocks = vi.hoisted(() => ({
     createRoom: vi.fn(),
     getRoom: vi.fn(),
   },
+  splendor: {
+    listRooms: vi.fn(),
+    createRoom: vi.fn(),
+    takeSeat: vi.fn(),
+    standUp: vi.fn(),
+    getRoom: vi.fn(),
+  },
 }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: mocks.push }),
+  useRouter: () => ({ push: mocks.push, back: mocks.back }),
   useRoute: () => mocks.route,
 }))
 vi.mock('@/store/user', () => ({ useUserStore: () => mocks.store }))
 vi.mock('@/api/xiangqi', () => mocks.api)
+vi.mock('@/api/splendor', () => mocks.splendor)
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)
@@ -116,6 +125,8 @@ describe('lobby join navigation', () => {
     vi.clearAllMocks()
     mocks.store.userInfo = { userName: 'alice' }
     mocks.api.listRooms.mockResolvedValue(oneWaiting)
+    // 并行探测的另一路：缺省按"房间不存在"落定，保证 allSettled 同步收敛
+    mocks.splendor.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
   })
 
   it('join validates room via getRoom then navigates (seating happens in-room)', async () => {
@@ -151,6 +162,53 @@ describe('lobby join navigation', () => {
     await flushPromises()
     expect(mocks.api.getRoom).toHaveBeenCalledWith('ABC123')
     expect(mocks.push).toHaveBeenCalledWith('/game/ABC123')
+  })
+})
+
+/** level 2：Splendor 房间层（卡牌区 → 璀璨宝石） */
+const L2S = { zone: 'card', game: 'splendor' }
+
+describe('lobby splendor level 2', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.splendor.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+    mocks.api.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+  })
+
+  it('lists splendor rooms via splendor api and renders host/seated info', async () => {
+    mocks.splendor.listRooms.mockResolvedValue({
+      rooms: [{ roomId: 'S1', hostName: 'alice', maxPlayers: 4, seatedCount: 2, status: 'WAITING' }],
+      waitingCount: 1,
+      playingCount: 0,
+    })
+    const w = mountLobby(L2S)
+    await flushPromises()
+    expect(mocks.splendor.listRooms).toHaveBeenCalled()
+    expect(mocks.api.listRooms).not.toHaveBeenCalled()
+    expect(w.text()).toContain('房主 alice')
+    expect(w.text()).toContain('2/4 人')
+  })
+
+  it('create splendor room posts capacity and routes to /splendor/:roomId', async () => {
+    mocks.splendor.createRoom.mockResolvedValue({ success: true, room: { roomId: 'S2' } })
+    const w = mountLobby(L2S)
+    await flushPromises()
+    await buttonByText(w, '创建房间')!.trigger('click')
+    await flushPromises()
+    expect(mocks.splendor.createRoom).toHaveBeenCalledWith('alice', 4)
+    expect(mocks.push).toHaveBeenCalledWith('/splendor/S2')
+  })
+
+  it('join splendor room by id probes splendor api first at splendor lobby', async () => {
+    mocks.splendor.getRoom.mockResolvedValue({ success: true, room: { roomId: 'S3' } })
+    const w = mountLobby(L2S)
+    await flushPromises()
+    await w.find('input[placeholder="房间号(如 ABC123)"]').setValue('S3')
+    await buttonByText(w, '加入')!.trigger('click')
+    await flushPromises()
+    expect(mocks.splendor.getRoom).toHaveBeenCalledWith('S3')
+    expect(mocks.push).toHaveBeenCalledWith('/splendor/S3')
   })
 })
 
@@ -223,6 +281,13 @@ describe('lobby levels', () => {
       expect(mocks.push).toHaveBeenCalledWith('/lobby')
       w.unmount()
     }
+  })
+
+  it('shows back-one-page button next to back-to-lobby in breadcrumb', async () => {
+    const w = mountLobby(L2)
+    await flushPromises()
+    expect(buttonByText(w, '← 返回上一页')).toBeDefined()
+    expect(buttonByText(w, '← 返回大厅')).toBeDefined()
   })
 
   it('zone card click pushes zone query; game card click pushes zone+game', async () => {

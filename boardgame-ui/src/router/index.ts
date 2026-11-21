@@ -6,7 +6,8 @@ import { useUserStore } from '@/store/user'
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', component: () => import('@/views/home/index.vue') },
+    // 根路径直接进大厅；原游戏选择页（象棋/五子棋卡片）已删除
+    { path: '/', redirect: '/lobby' },
     { path: '/login', name: 'login', component: () => import('@/views/login/index.vue') },
     {
       path: '/register',
@@ -20,15 +21,32 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/rules/:gameKey',
+      name: 'rules',
+      component: () => import('@/views/rules/index.vue'),
+    },
+    {
       path: '/game/:roomId',
       name: 'game',
       component: () => import('@/views/game/index.vue'),
       meta: { requiresAuth: true },
     },
     {
+      path: '/splendor/:roomId',
+      name: 'splendor',
+      component: () => import('@/views/splendor/index.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/design',
       name: 'design',
       component: () => import('@/views/design/index.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('@/views/profile/index.vue'),
       meta: { requiresAuth: true },
     },
   ],
@@ -43,9 +61,9 @@ router.beforeEach((to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
-  // 已登录访问登录/注册页：重定向首页
+  // 已登录访问登录/注册页：重定向大厅
   if (userStore.isLogin && (to.path === '/login' || to.path === '/register')) {
-    return { path: '/' }
+    return { path: '/lobby' }
   }
 })
 

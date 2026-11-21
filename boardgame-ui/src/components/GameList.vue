@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import type { Game, Zone } from '@/constants/catalog'
 import { ZONE_SEALS } from '@/constants/zoneSeals'
+import { findRuleBook } from '@/constants/rules'
 
 defineProps<{ zone: Zone; games: Game[] }>()
-defineEmits<{ select: [gameKey: string] }>()
+defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
 </script>
 
 <template>
   <div class="game-list">
     <div class="zone-header rise" style="--i: 0">
-      <span class="zone-seal">{{ ZONE_SEALS[zone.key] ?? '棋' }}</span>
+      <span class="zone-seal">{{ ZONE_SEALS[zone.key] ?? '桌' }}</span>
       <div class="zone-head-text">
         <h2 class="zone-title">{{ zone.name }}</h2>
         <div class="zone-tags">
@@ -35,6 +36,16 @@ defineEmits<{ select: [gameKey: string] }>()
           <span v-if="game.players" class="g-players">{{ game.players }} 人</span>
           <span class="entry-badge" :class="game.playable ? 'badge-playable' : 'badge-soon'">
             {{ game.playable ? '可玩' : '敬请期待' }}
+          </span>
+          <span
+            v-if="findRuleBook(game.key)"
+            class="rules-link"
+            role="button"
+            tabindex="0"
+            @click.stop="$emit('rules', game.key)"
+            @keydown.enter.stop.prevent="$emit('rules', game.key)"
+          >
+            📖 规则
           </span>
           <span v-if="game.playable" class="go">进入房间层 →</span>
         </span>
@@ -164,6 +175,24 @@ button.game-entry {
 .badge-soon {
   color: var(--muted);
   border: 1px dashed var(--muted);
+}
+.rules-link {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--accent-hover);
+    color: var(--color-primary);
+    outline: none;
+  }
 }
 .go {
   color: var(--color-primary);

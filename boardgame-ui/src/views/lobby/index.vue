@@ -4,12 +4,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import * as chessApi from '@/api/xiangqi'
+import * as splendorApi from '@/api/splendor'
 import { useRoom } from '@/composables/useRoom'
 import { useUserStore } from '@/store/user'
 import { ZONES, gamesInZone, resolveLevel } from '@/constants/catalog'
 import ZoneGrid from '@/components/ZoneGrid.vue'
 import GameList from '@/components/GameList.vue'
+import BackToRoom from '@/components/BackToRoom.vue'
 import logoWordmark from '@/assets/logo-wordmark.png'
+import { goBackOrLobby } from '@/utils/navigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -26,12 +29,19 @@ const {
   startPolling,
   stopPolling,
 } = useRoom({
-  listRooms: () => chessApi.listRooms(),
+  listRooms: () =>
+    nav.value.game?.key === 'splendor' ? splendorApi.listRooms() : chessApi.listRooms(),
   onError: (error) => ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试')),
 })
 
-/** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 象棋房间层） */
+/** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 房间层） */
 const nav = computed(() => resolveLevel(route.query))
+
+/** 房间层当前游戏是否为 Splendor（决定建房参数与跳转路由） */
+const isSplendor = computed(() => nav.value.game?.key === 'splendor')
+
+/** Splendor 建房容量（2-4） */
+const capacity = ref(4)
 
 const joinRoomId = ref('')
 const loading = ref(false)
@@ -70,15 +80,24 @@ async function handleCreate(): Promise<void> {
   }
   loading.value = true
   try {
-    const data = await chessApi.createRoom(userName)
-    if (data.success && data.room) {
-      const roomId = (data.room as { roomId?: string }).roomId
-      if (roomId) {
-        router.push(`/game/${roomId}`)
+    if (isSplendor.value) {
+      const data = await splendorApi.createRoom(userName, capacity.value)
+      if (data.success && data.room) {
+        router.push(`/splendor/${data.room.roomId}`)
         return
       }
+      ElMessage.error(data.error ?? '创建房间失败')
+    } else {
+      const data = await chessApi.createRoom(userName)
+      if (data.success && data.room) {
+        const roomId = (data.room as { roomId?: string }).roomId
+        if (roomId) {
+          router.push(`/game/${roomId}`)
+          return
+        }
+      }
+      ElMessage.error(data.error ?? '创建房间失败')
     }
-    ElMessage.error(data.error ?? '创建房间失败')
   } catch (error) {
     ElMessage.error(errMsg(error, '创建房间失败，请稍后重试'))
   } finally {
@@ -86,16 +105,27 @@ async function handleCreate(): Promise<void> {
   }
 }
 
-/** 加入指定房间：校验存在即跳转，入座在房内选择 */
+/** 加入指定房间：房间号可能属于任一游戏，并行探测按命中跳转，入座在房内选择 */
 async function handleJoin(roomId: string): Promise<void> {
   loading.value = true
   try {
-    const data = await chessApi.getRoom(roomId)
-    if (data.success) {
+    const [chess, splendor] = await Promise.allSettled([
+      chessApi.getRoom(roomId),
+      splendorApi.getRoom(roomId),
+    ])
+    const chs = chess.status === 'fulfilled' && chess.value.success ? chess.value : null
+    const spl = splendor.status === 'fulfilled' && splendor.value.success ? splendor.value : null
+    if (spl && (!chs || isSplendor.value)) {
+      router.push(`/splendor/${roomId}`)
+      return
+    }
+    if (chs) {
       router.push(`/game/${roomId}`)
       return
     }
-    ElMessage.error(data.error ?? '加入房间失败')
+    ElMessage.error(
+      (chess.status === 'fulfilled' ? chess.value.error : null) ?? '加入房间失败',
+    )
   } catch (error) {
     ElMessage.error(errMsg(error, '加入房间失败，请稍后重试'))
   } finally {
@@ -165,10 +195,18 @@ onUnmounted(() => {
       <div class="lobby-top-in">
         <img class="lobby-logo" :src="logoWordmark" alt="DiceGo" />
         <div class="lobby-top-actions">
-          <span class="lobby-avatar">{{ avatarChar }}</span>
-          <span class="lobby-user">{{
-            userStore.userInfo?.nickName || userStore.userInfo?.userName || '未登录'
-          }}</span>
+          <button
+            type="button"
+            class="lobby-user-link"
+            :disabled="!userStore.isLogin"
+            :title="userStore.isLogin ? '个人资料' : '请先登录'"
+            @click="userStore.isLogin && router.push('/profile')"
+          >
+            <span class="lobby-avatar">{{ avatarChar }}</span>
+            <span class="lobby-user">{{
+              userStore.userInfo?.nickName || userStore.userInfo?.userName || '未登录'
+            }}</span>
+          </button>
           <button type="button" class="btn btn-ghost btn-sm" @click="userStore.logout()">
             退出登录
           </button>
@@ -178,6 +216,9 @@ onUnmounted(() => {
 
     <div class="lobby-wrap">
       <nav v-if="nav.level > 0" class="lobby-crumb" aria-label="大厅层级">
+        <button type="button" class="btn btn-ghost btn-sm" @click="goBackOrLobby(router)">
+          ← 返回上一页
+        </button>
         <button type="button" class="btn btn-ghost btn-sm" @click="backToLobby">
           ← 返回大厅
         </button>
@@ -190,9 +231,9 @@ onUnmounted(() => {
       <template v-if="nav.level === 0">
         <div class="lobby-guide">
           <div class="guide-copy rise" style="--i: 0">
-            <h1 class="guide-title">选一张棋桌，坐下。</h1>
+            <h1 class="guide-title">选一款桌游，坐下。</h1>
             <p class="guide-lede">
-              有房间号？<b>右侧直接入场</b>。想逛逛？下面七个分区按玩法机制划分——挑一个合你口味的，进去看棋种。
+              有房间号？<b>右侧直接入场</b>。想逛逛？下面七个分区按玩法机制划分——挑一个合你口味的，进去看桌游。
             </p>
           </div>
           <form class="fastjoin rise" style="--i: 1" @submit.prevent>
@@ -235,6 +276,7 @@ onUnmounted(() => {
         :zone="nav.zone!"
         :games="gamesInZone(nav.zone!.key)"
         @select="openGame"
+        @rules="(key) => router.push(`/rules/${key}`)"
       />
 
       <!-- level 2：房间操作 + 房间列表 -->
@@ -242,6 +284,14 @@ onUnmounted(() => {
         <div class="room-ops">
           <div class="op rise" style="--i: 0">
             <h2 class="op-title"><span class="stepno">开局</span>创建房间</h2>
+            <div v-if="isSplendor" class="op-cap">
+              <label class="cap-label" for="cap-select">人数上限</label>
+              <select id="cap-select" v-model.number="capacity" class="cap-select">
+                <option :value="2">2 人</option>
+                <option :value="3">3 人</option>
+                <option :value="4">4 人</option>
+              </select>
+            </div>
             <button
               type="button"
               class="btn btn-primary op-create"
@@ -250,7 +300,13 @@ onUnmounted(() => {
             >
               <span v-if="loading" class="spin"></span>创建房间
             </button>
-            <p class="hint">创建房间后进入房间选择红方/黑方座位，双方落座即开战</p>
+            <p class="hint">
+              {{
+                isSplendor
+                  ? '创建后进入房间选座（1-4 号位），2 人以上入座房主即可开局'
+                  : '创建房间后进入房间选择红方/黑方座位，双方落座即开战'
+              }}
+            </p>
           </div>
           <form class="op rise" style="--i: 1" @submit.prevent>
             <h2 class="op-title"><span class="stepno">赴约</span>输入房间号加入</h2>
@@ -316,7 +372,15 @@ onUnmounted(() => {
               :style="{ '--i': i }"
             >
               <span class="rid">{{ room.roomId }}</span>
-              <span class="seats">
+              <span v-if="isSplendor" class="seats">
+                <span class="seat seat-red">
+                  <span class="pip"></span>房主 {{ room.hostName ?? '?' }}
+                </span>
+                <span class="seat seat-black">
+                  <span class="pip"></span>{{ room.seatedCount ?? 0 }}/{{ room.maxPlayers ?? 4 }} 人
+                </span>
+              </span>
+              <span v-else class="seats">
                 <span class="seat seat-red">
                   <span class="pip"></span>{{ room.redPlayerName || '空位' }}
                 </span>
@@ -363,6 +427,9 @@ onUnmounted(() => {
         </div>
       </template>
     </div>
+
+    <!-- 意外离开房间后，右下角一键返回 -->
+    <BackToRoom />
   </div>
 </template>
 
@@ -403,6 +470,26 @@ onUnmounted(() => {
   font-size: 14px;
   color: var(--muted);
   min-width: 0;
+}
+.lobby-user-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.lobby-user-link:hover .lobby-user {
+  color: var(--ink);
+}
+.lobby-user-link:disabled {
+  cursor: default;
+}
+.lobby-user-link:disabled:hover .lobby-user {
+  color: var(--muted);
 }
 .lobby-avatar {
   width: 30px;
@@ -664,6 +751,30 @@ input[type='text'] {
 .op-create {
   width: 100%;
   padding: 14px;
+}
+.op-cap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cap-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.cap-select {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
 .op-row {
   display: flex;

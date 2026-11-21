@@ -104,10 +104,17 @@
             <artifactId>ruoyi-workflow</artifactId>
         </dependency>
 
-        <!--  桌游对战模块  -->
+        <!--  桌游对战模块：中国象棋  -->
         <dependency>
             <groupId>org.dromara</groupId>
-            <artifactId>ruoyi-xiangqi</artifactId>
+            <artifactId>dicego-xiangqi</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!--  桌游对战模块：宝石商人（Splendor）  -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>dicego-splendor</artifactId>
             <version>${revision}</version>
         </dependency>
 
