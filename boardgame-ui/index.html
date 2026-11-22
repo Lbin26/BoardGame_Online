@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>DiceGo 桌游平台</title>
+    <script>
+      // 在样式/应用加载前确定主题，避免刷新时白/黑闪烁
+      try {
+        var t = localStorage.getItem('dicego:theme')
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark')
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark')
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

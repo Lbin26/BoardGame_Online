@@ -1,0 +1,216 @@
+# 胡闹运动会（Magical Athlete / 魔法运动员）真实规则数据集
+# 版本：CMYK 基础盒 2026-08-28 修订（ruleset: cmyk-base-2026-08-28）
+# 数值单一事实来源：赛道 0-30、四场奖牌 [3,1]/[4,2]/[4,2]/[5,3]、36 名选手
+# 来源核对记录见 journal.md；扩展字段（board/racerAbilities/trophies/variants）不属于
+# tools/boardgame-design 的 GameDocSchema，校验会忽略，但实现引擎必须消费这些字段。
+schemaVersion: 1
+meta:
+  key: magicalAthlete
+  name: 胡闹运动会（Magical Athlete）
+  players: { min: 2, max: 6 }
+  durationMin: 30
+  targetWeight: 1.2
+  zone: party
+mechanisms:
+  - drafting
+  - dice-driven
+  - variable-player-powers
+  - light-dice-strategy
+components:
+  resources:
+    - { key: gold, name: 第一名金牌, supply: 4 }
+    - { key: silver, name: 第二名银牌, supply: 4 }
+    - { key: bronze1, name: 1 分铜币, supply: 16 }
+    - { key: bronze3, name: 3 分铜币, supply: 9 }
+  dice:
+    - { key: d6, name: 六面骰, faces: [1, 2, 3, 4, 5, 6], count: 6 }
+  decks:
+    - key: racer
+      name: 选手卡（36 名，每名唯一）
+      cards:
+        - { key: alchemist, name: 炼金术士, count: 1 }
+        - { key: baba_yaga, name: 鸡脚屋, count: 1 }
+        - { key: banana, name: 香蕉, count: 1 }
+        - { key: blimp, name: 飞艇, count: 1 }
+        - { key: centaur, name: 半人马, count: 1 }
+        - { key: cheerleader, name: 啦啦队长, count: 1 }
+        - { key: coach, name: 教练, count: 1 }
+        - { key: copycat, name: 模仿猫, count: 1 }
+        - { key: dicemonger, name: 骰子商人, count: 1 }
+        - { key: duelist, name: 决斗家, count: 1 }
+        - { key: egg, name: 蛋蛋, count: 1 }
+        - { key: flip_flop, name: 人字拖, count: 1 }
+        - { key: genius, name: 天才, count: 1 }
+        - { key: gunk, name: 黏液怪, count: 1 }
+        - { key: hare, name: 野兔, count: 1 }
+        - { key: heckler, name: 起哄者, count: 1 }
+        - { key: huge_baby, name: 巨婴, count: 1 }
+        - { key: hypnotist, name: 催眠师, count: 1 }
+        - { key: inchworm, name: 尺蠖, count: 1 }
+        - { key: lackey, name: 跟班, count: 1 }
+        - { key: leaptoad, name: 跳跳蟾蜍, count: 1 }
+        - { key: legs, name: 大长腿, count: 1 }
+        - { key: lovable_loser, name: 可爱的倒霉蛋, count: 1 }
+        - { key: magician, name: 魔术师, count: 1 }
+        - { key: mastermind, name: 幕后军师, count: 1 }
+        - { key: mouth, name: 大嘴怪, count: 1 }
+        - { key: party_animal, name: 派对动物, count: 1 }
+        - { key: rocket_scientist, name: 火箭科学家, count: 1 }
+        - { key: romantic, name: 浪漫家, count: 1 }
+        - { key: scoocher, name: 蹭蹭怪, count: 1 }
+        - { key: sisyphus, name: 西西弗斯, count: 1 }
+        - { key: skipper, name: 船长, count: 1 }
+        - { key: stickler, name: 较真怪, count: 1 }
+        - { key: suckerfish, name: 吸盘鱼, count: 1 }
+        - { key: third_wheel, name: 电灯泡, count: 1 }
+        - { key: twin, name: 双胞胎, count: 1 }
+
+# ---- 设计扩展：赛道（schema 之外，引擎必读） ----
+board:
+  ruleset: cmyk-base-2026-08-28
+  start: 0
+  firstCell: 1
+  lastCell: 29
+  finishAt: 30               # 到达 30 即冲线；终点不是可停留/可传送的格
+  firstCorner: 12
+  secondCorner: 15           # Blimp 判定：回合起点 < 15 为 +3，否则 -1
+  mildSide:
+    key: mild-mile
+    specials: []             # 平缓面无特殊格，只有选手能力造成干扰
+  wildSide:
+    key: wild-wilds
+    specials:
+      - { space: 1, effect: bronze1 }
+      - { space: 5, effect: trip }
+      - { space: 7, effect: move, delta: 3 }
+      - { space: 11, effect: move, delta: 1 }
+      - { space: 13, effect: bronze1 }
+      - { space: 16, effect: move, delta: -4 }
+      - { space: 17, effect: trip }
+      - { space: 23, effect: move, delta: 2 }
+      - { space: 24, effect: move, delta: -2 }
+      - { space: 26, effect: trip }
+  # 箭头格产生一次独立移动，不并入主要移动；传送到特殊格同样触发停格效果
+
+# ---- 设计扩展：四场比赛顺序与奖牌面值 ----
+trophies:
+  - { race: 1, track: mild, gold: 3, silver: 1 }
+  - { race: 2, track: wild, gold: 4, silver: 2 }
+  - { race: 3, track: mild, gold: 4, silver: 2 }
+  - { race: 4, track: wild, gold: 5, silver: 3 }
+
+tiePolicy: shared-victory     # 顶层：总分相同并列获胜，不设决胜局
+
+# ---- 设计扩展：36 名选手能力摘要（与 rules.md 表一致） ----
+# type 仅用于实现分流：fixed-move / mod-move / interrupt / reactive / scoring / warp / copy
+racerAbilities:
+  alchemist: { name: 炼金术士, type: fixed-move, effect: 主骰 1/2 可把移动基数替换为 4，再加修正；Inchworm 仍可取消 1 }
+  baba_yaga: { name: 鸡脚屋, type: interrupt, effect: 单独停入或被停入时令对方绊倒（含同时到达修订） }
+  banana: { name: 香蕉, type: interrupt, effect: 被一次移动越过时令移动者绊倒，含反向越过 }
+  blimp: { name: 飞艇, type: mod-move, effect: 回合起点在第二角前（<15）主移动 +3，否则 −1 }
+  centaur: { name: 半人马, type: interrupt, effect: 超越时对方后退 2 格，后退越过也触发；不越过起点 }
+  cheerleader: { name: 啦啦队长, type: mod-move, effect: 可令所有最后名同时 +2，然后自己 +1（只 +1 一次） }
+  coach: { name: 教练, type: mod-move, effect: 所在格全部运动员（含自己）主移动 +1 }
+  copycat: { name: 模仿猫, type: copy, effect: 持续复制当前领先者能力；并列自选；不复制赛前能力；冲突时原能力优先 }
+  dicemonger: { name: 骰子商人, type: reactive, effect: 每人每回合可额外重掷一次；别人重掷时自己 +1（先于新骰结算） }
+  duelist: { name: 决斗家, type: interrupt, effect: 同格可决斗，比骰高者 +2，自己赢平；不打断进行中的动作 }
+  egg: { name: 蛋蛋, type: copy, effect: 赛前抽三张选一复制其能力（含赛前能力）；候选不回牌堆 }
+  flip_flop: { name: 人字拖, type: warp, effect: 可用与另一选手同时交换位置替代主移动；属传送不算移动 }
+  genius: { name: 天才, type: reactive, effect: 猜中最终主骰点数则获得额外回合；猜 1 时 Skipper 抢先并替代该回合 }
+  gunk: { name: 黏液怪, type: mod-move, effect: 其他选手主移动 −1，多个效果叠加（作用于距离而非骰点） }
+  hare: { name: 野兔, type: mod-move, effect: 主移动 +2；回合开始独自领先则跳过主移动；不发铜分 }
+  heckler: { name: 起哄者, type: reactive, effect: 任一选手完整回合结束位置与起点距离 ≤1 时自己 +2 }
+  huge_baby: { name: 巨婴, type: interrupt, effect: 非起点禁止共格，把后来者放到其后一格；属于停格而非移动 }
+  hypnotist: { name: 催眠师, type: warp, effect: 回合初可传送一名选手到自己所在格 }
+  inchworm: { name: 尺蠖, type: interrupt, effect: 别人最终主骰为 1 时取消其主移动，自己 +1 }
+  lackey: { name: 跟班, type: reactive, effect: 别人最终主骰为 6 时自己先 +2 }
+  leaptoad: { name: 跳跳蟾蜍, type: interrupt, effect: 移动只计空格（前后皆可）；每跳过一个占据格算一次能力发动 }
+  legs: { name: 大长腿, type: fixed-move, effect: 可不掷骰，主移动改为 5，仍受距离修正影响 }
+  lovable_loser: { name: 可爱的倒霉蛋, type: scoring, effect: 回合初独自垫底获得 1 分；绊倒状态仍有效 }
+  magician: { name: 魔术师, type: reactive, effect: 主骰最多重掷两次，使用最终结果 }
+  mastermind: { name: 幕后军师, type: scoring, effect: 首回合初预测冠军；猜中立即获第二并结束比赛；自猜可同时得金银 }
+  mouth: { name: 大嘴怪, type: interrupt, effect: 自己停入恰有一名对手的格时淘汰该对手（含同时到达修订） }
+  party_animal: { name: 派对动物, type: mod-move, effect: 回合初其他人同时向自己移动 1；同格每位其他选手使主移动 +1 }
+  rocket_scientist: { name: 火箭科学家, type: mod-move, effect: 主骰可翻倍再加修正，完成后自己绊倒 }
+  romantic: { name: 浪漫家, type: reactive, effect: 有人停入恰有一人的格时自己 +2（含同时到达修订） }
+  scoocher: { name: 蹭蹭怪, type: reactive, effect: 别人能力每次实际发动自己 +1，不以每回合一次为限 }
+  sisyphus: { name: 西西弗斯, type: scoring, effect: 赛前 +4 分；主骰为 6 则代替移动传送回起点并 −1 分 }
+  skipper: { name: 船长, type: interrupt, effect: 任一最终主骰为 1 时下一个行动者改为自己，然后从自己之后继续 }
+  stickler: { name: 较真怪, type: interrupt, effect: 别人所有移动必须恰好冲线，过量则整次移动取消 }
+  suckerfish: { name: 吸盘鱼, type: warp, effect: 开始移动前选择跟随，同组同时到达，名次在被跟随者之后；可跟随后退 }
+  third_wheel: { name: 电灯泡, type: warp, effect: 回合初可传送至恰有两人的格，之后仍有主移动 }
+  twin: { name: 双胞胎, type: copy, effect: 赛前可复制上一场冠军能力，包含其赛前能力 }
+
+# ---- 设计扩展：模式与结算语义 ----
+variants:
+  normal:
+    players: [3, 6]
+    racersPerPlayer: 4
+    activePerRace: 1
+    draft: 两批蛇形轮选，每批展示人数 ×2 张；每批每人 2 张，共 4 张
+  twoPlayer:
+    players: [2]
+    racersPerPlayer: 8
+    activePerRace: 2
+    draft: 两批各 8 张，顺序 ABBAABBA / BAABBAAB；每回合依次移动两名选手
+  threePlayerDouble:
+    players: [3]
+    racersPerPlayer: 8
+    activePerRace: 2
+    draft: 四批各 6 张，ABCCBA / BCAACB / CABBAC / ABCCBA；赛前固定两名选手顺序
+resolutionOrder: [track-space, current-racer, other-racers-clockwise]
+turnStructure:
+  phases:
+    - key: draft
+      name: 轮抽组队
+      summary: 展示人数两倍的选手卡，蛇形两轮选满 4 名（2 人/3 人双角色变体见 variants）。
+    - key: muster
+      name: 赛前准备
+      summary: 每场从手牌同时暗选 1 名出场选手并公开；用过的选手永久离场；处理赛前能力（Egg/Twin/Sisyphus）。
+    - key: main-move
+      name: 主要移动
+      summary: 当前行动者掷一颗六面骰，按点数沿赛道前进；"可以"类能力可选，其余强制。
+    - key: resolve
+      name: 能力结算
+      summary: 动作完成后按赛道格 → 当前选手 → 其余选手顺时针顺序结算触发的能力，可产生连锁。
+    - key: race-end
+      name: 单场结算
+      summary: 第二人冲线立即结束；冠亚分别取当前最高金牌/银牌；选手与卡离场，赛道翻面。
+    - key: final
+      name: 终局计分
+      summary: 四场结束后累计金牌、银牌、铜币面值；总分最高胜，同分并列。
+subsystems:
+  scoring:
+    endTrigger: 完成第四场比赛即结束；总分并列共享胜利
+    vpSources:
+      - key: gold
+        name: 金牌
+        description: 单场第一名取该场金牌，面值依次为 3/4/4/5 分。
+      - key: silver
+        name: 银牌
+        description: 单场第二名取该场银牌，面值依次为 1/2/2/3 分。
+      - key: bronze
+        name: 铜币
+        description: 狂野面星星格或选手能力获得，按铜币印刷面值计 1 或 3 分。
+analysis:
+  whyFun: 表层只有"掷骰走格"，但每位选手都带着一条破坏这条规则的能力；轮抽决定牌池剥夺，四场出场时机决定强弱曲线，能力连锁又能制造"蹭蹭怪跟着别人发疯狂奔"的节目效果。规则五分钟能讲完，36 种能力却提供长期探索空间。
+  remixable:
+    - 蛇形轮抽 + 每场暗选出场：把"选角"本身做成半场游戏，保留封锁对手的博弈。
+    - 可变玩家能力注册表：能力用事件触发器（赛前/移动前/停格/超越/被超越/被重掷）统一建模，新角色只是数据。
+    - 绊倒＝跳过下一次主要移动而非跳过整个回合：被绊倒者仍可触发能力，避免"失去一整回合"的挫败。
+    - 奖牌逐场升值：后期场次风险更高，迫使玩家提前规划最强选手的出场时机。
+  pitfalls: 点数与移动距离必须分离（先替换/翻倍再累加修正）；传送不算移动，不触发超越与跟随；"移动 0"不触发任何移动类效果；真正循环需位置/状态/待结算效果全部重复才截断，不能用"每能力每回合一次"粗暴限制。数值来源以 2026-08 修订 FAQ 为准，官方 PDF 的隐藏英文层有错位（Blimp +2、Hare 铜分），禁止直接全文抽取。
+  sources:
+    - title: RulesPal — Magical Athlete Rulebook（流程、术语、36 人能力原文）
+      url: https://rulespal.com/magical-athlete/rulebook
+    - title: Gamerules — Magical Athlete（奖牌逐场递增、特殊格、2/3 人变体）
+      url: https://gamerules.com/rules/magical-athlete/
+    - title: GitHub pedestrian6/magical-athlete — 规则核对记录（cmyk-base-2026-08-28，官方 PDF + FAQ 逐条核对）
+      url: https://github.com/pedestrian6/magical-athlete/blob/main/docs/rules.md
+    - title: Sporcle — Magical Athlete Characters（36 名选手名单交叉验证）
+      url: https://www.sporcle.com/games/hazzaricks/magical-athlete-characters/results
+    - title: 桌游库 — 胡闹运动会（中文译名、人数、轮抽与四场流程）
+      url: https://www.zhuoyouku.com/boardgame/r1on66y70j7p48k7r26uiknu
+    - title: 鱼人桌游公众号 — 胡闹运动会（9 名重点选手中文能力与体验描述）
+      url: http://mp.weixin.qq.com/s?__biz=MzE5ODk4MDM3MQ==&mid=2247484295&idx=1&sn=7bb5078a72188e3731bb9dd988436638
+  confidence: high

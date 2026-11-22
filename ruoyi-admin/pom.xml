@@ -118,6 +118,20 @@
             <version>${revision}</version>
         </dependency>
 
+        <!--  桌游对战模块：德国心脏病（Halli Galli）  -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>dicego-halligalli</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!--  桌游对战模块：胡闹运动会（Magical Athlete）  -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>dicego-magicalathlete</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>

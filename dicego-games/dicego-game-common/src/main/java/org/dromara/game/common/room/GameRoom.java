@@ -17,6 +17,10 @@ public abstract class GameRoom {
     @Getter
     private final String roomId;
 
+    /** 房主（建房者）：解散房间等房间级协作的权限依据，与具体游戏无关 */
+    @Getter
+    private final String hostName;
+
     @Getter
     protected volatile RoomStatus status;
 
@@ -30,7 +34,12 @@ public abstract class GameRoom {
     private final Set<String> afkPlayers = ConcurrentHashMap.newKeySet();
 
     protected GameRoom(String roomId) {
+        this(roomId, null);
+    }
+
+    protected GameRoom(String roomId, String hostName) {
         this.roomId = roomId;
+        this.hostName = hostName;
         this.status = RoomStatus.WAITING;
         this.lastActivityAt = System.currentTimeMillis();
     }

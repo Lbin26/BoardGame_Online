@@ -38,6 +38,18 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/halli-galli/:roomId',
+      name: 'halliGalli',
+      component: () => import('@/views/halliGalli/index.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/magical-athlete/:roomId',
+      name: 'magicalAthlete',
+      component: () => import('@/views/magicalAthlete/index.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/design',
       name: 'design',
       component: () => import('@/views/design/index.vue'),

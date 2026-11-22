@@ -27,7 +27,9 @@ describe('catalog games', () => {
     expect(by('gomoku').playable).toBe(false)
     expect(gamesInZone('abstract').map((g) => g.key)).toEqual(['xiangqi', 'go', 'gomoku'])
     expect(gamesInZone('card').map((g) => g.key)).toEqual(['splendor'])
-    expect(gamesInZone('party')).toEqual([])
+    expect(gamesInZone('party').map((g) => g.key)).toEqual(['halliGalli', 'magicalAthlete'])
+    expect(by('halliGalli')).toMatchObject({ zone: 'party', playable: true, players: 6 })
+    expect(by('magicalAthlete')).toMatchObject({ zone: 'party', playable: true, players: 6 })
   })
 })
 

@@ -27,6 +27,12 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
+        <!-- 对局落库三表（game_match / game_match_player / game_action_log）为全游戏共用 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-mybatis</artifactId>
+        </dependency>
+
     </dependencies>
 
 </project>

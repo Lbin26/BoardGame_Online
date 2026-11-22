@@ -36,9 +36,6 @@ public class SplendorRoom extends GameRoom {
     public enum StartResult { SUCCESS, NOT_HOST, NOT_WAITING, NOT_ENOUGH_PLAYERS }
 
     @Getter
-    private final String hostName;
-
-    @Getter
     private final int maxPlayers;
 
     private final SplendorCardCache cache;
@@ -67,11 +64,10 @@ public class SplendorRoom extends GameRoom {
 
     public SplendorRoom(String roomId, String hostName, int maxPlayers, SplendorCardCache cache,
                         SplendorMatchRecorder recorder) {
-        super(roomId);
+        super(roomId, hostName);
         if (maxPlayers < 2 || maxPlayers > 4) {
             throw new IllegalArgumentException("Splendor 房间容量必须 2-4: " + maxPlayers);
         }
-        this.hostName = hostName;
         this.maxPlayers = maxPlayers;
         this.cache = cache;
         this.recorder = recorder;
@@ -118,7 +114,7 @@ public class SplendorRoom extends GameRoom {
 
     /** 房主开局：≥2 人入座才可发牌（D2：座位号 + 房主开局）；成功后回调落库（M5） */
     public synchronized StartResult startGame(String playerName) {
-        if (!hostName.equals(playerName)) return StartResult.NOT_HOST;
+        if (!getHostName().equals(playerName)) return StartResult.NOT_HOST;
         if (getStatus() != RoomStatus.WAITING) return StartResult.NOT_WAITING;
         if (seats.size() < 2) return StartResult.NOT_ENOUGH_PLAYERS;
 
@@ -234,7 +230,7 @@ public class SplendorRoom extends GameRoom {
                 name != null && seatOnline.getOrDefault(no, false),
                 name != null && isAfk(name)));
         }
-        return new SplendorRoomVO(getRoomId(), hostName, maxPlayers, getStatus(), seatVOs,
+        return new SplendorRoomVO(getRoomId(), getHostName(), maxPlayers, getStatus(), seatVOs,
             seatOf(viewerName), afkPlayers());
     }
 

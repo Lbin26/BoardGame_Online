@@ -1,4 +1,5 @@
-:root {
+:root,
+[data-theme='dark'] {
   --color-primary: #e94560;
   --bg-base: #1a1a2e;
   --bg-gradient-start: #1a1a2e;
@@ -24,6 +25,17 @@
   --accent-hover: rgba(233, 69, 96, 0.55);
   --accent-seal: rgba(233, 69, 96, 0.35);
   --danger: #ba374d;
+
+  /* 半透明面板表面（深色主题） */
+  --surface-1: rgba(32, 32, 58, 0.6);
+  --surface-2: rgba(32, 32, 58, 0.7);
+  --surface-3: rgba(26, 26, 46, 0.8);
+  --surface-4: rgba(32, 32, 58, 0.5);
+  /* 内层凹槽（聊天/日志）及其滚动条 */
+  --well-bg: rgba(0, 0, 0, 0.25);
+  --scroll-thumb: rgba(255, 255, 255, 0.18);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.5);
+
   --radius: 6px;
   --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 18px 44px -16px rgba(0, 0, 0, 0.55);
@@ -32,6 +44,46 @@
   --font-body:
     'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial,
     sans-serif;
+}
+
+/* ---- 白天模式：覆盖整套 DiceGo token + Element Plus 主色 ---- */
+[data-theme='light'] {
+  --color-primary: #d62e4a;
+  --bg-base: #f4f5f9;
+  --bg-gradient-start: #f7f8fc;
+  --bg-gradient-end: #e9ecf5;
+
+  /* Element Plus 主色映射为略深的品牌红，保证浅底对比度 */
+  --el-color-primary: #d62e4a;
+  --el-color-primary-light-3: #e16276;
+  --el-color-primary-light-5: #e98b9a;
+  --el-color-primary-light-7: #f2b4bd;
+  --el-color-primary-light-8: #f6cbd1;
+  --el-color-primary-light-9: #fae5e8;
+  --el-color-primary-dark-2: #ab243b;
+
+  --panel: #ffffff;
+  --ink: #23233a;
+  --muted: #6b7085;
+  --line: rgba(35, 35, 58, 0.14);
+  --input-bg: #eef0f6;
+  --accent-soft: rgba(214, 46, 74, 0.08);
+  --accent-line: rgba(214, 46, 74, 0.32);
+  --accent-hover: rgba(214, 46, 74, 0.5);
+  --accent-seal: rgba(214, 46, 74, 0.2);
+  --danger: #c0273f;
+
+  /* 半透明面板表面（白天主题） */
+  --surface-1: rgba(255, 255, 255, 0.86);
+  --surface-2: rgba(255, 255, 255, 0.92);
+  --surface-3: rgba(255, 255, 255, 0.95);
+  --surface-4: rgba(255, 255, 255, 0.8);
+  --well-bg: rgba(35, 35, 58, 0.05);
+  --scroll-thumb: rgba(35, 35, 58, 0.2);
+  --scroll-thumb-hover: rgba(35, 35, 58, 0.42);
+
+  --shadow-1: 0 2px 8px rgba(20, 24, 48, 0.12);
+  --shadow-2: 0 18px 44px -16px rgba(20, 24, 48, 0.22);
 }
 
 html,
@@ -48,7 +100,10 @@ body {
     var(--bg-gradient-start) 0%,
     var(--bg-gradient-end) 100%
   );
-  color: #ffffff;
+  color: var(--ink, #ffffff);
+  transition:
+    background 0.25s ease,
+    color 0.25s ease;
   font-family:
     'Helvetica Neue',
     Helvetica,

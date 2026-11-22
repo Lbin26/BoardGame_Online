@@ -19,6 +19,8 @@
         <module>dicego-game-common</module>
         <module>dicego-xiangqi</module>
         <module>dicego-splendor</module>
+        <module>dicego-halligalli</module>
+        <module>dicego-magicalathlete</module>
     </modules>
 
 </project>

@@ -71,7 +71,7 @@ function zoneMeta(zone: Zone): { count: number; live: number } {
   text-align: left;
   font: inherit;
   color: var(--ink);
-  background: rgba(32, 32, 58, 0.6);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;

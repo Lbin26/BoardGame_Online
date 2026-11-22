@@ -1,20 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import * as splendorApi from '@/api/splendor'
 import type { SplendorRoomInfo } from '@/api/splendor'
-import { useAfk } from '@/composables/useAfk'
-import { useChat } from '@/composables/useChat'
-import { useHeartbeat } from '@/composables/useHeartbeat'
-import { forgetLastRoom, rememberLastRoom } from '@/composables/useLastRoom'
-import { useUserStore } from '@/store/user'
+import { useChat, type ChatMessage } from '@/composables/useChat'
+import { useGameWebSocket } from '@/composables/useGameWebSocket'
+import { forgetLastRoom } from '@/composables/useLastRoom'
+import { useRoomEntry } from '@/composables/useRoomEntry'
 import { copyText } from '@/utils/clipboard'
 import { goBackOrLobby } from '@/utils/navigation'
 import {
   COLOR_HEX,
-  COLOR_LABELS,
   GEM_COLORS,
   computePayment,
   describeAction,
@@ -70,9 +68,7 @@ interface Ranking {
   nobleCount?: number
 }
 
-const route = useRoute()
 const router = useRouter()
-const userStore = useUserStore()
 
 const room = ref<SplendorRoomInfo | null>(null)
 const snapshot = ref<SplendorSnapshot | null>(null)
@@ -86,45 +82,55 @@ const pick = reactive<Record<string, number>>({})
 const discardSel = reactive<Record<string, number>>({})
 
 const chatBox = ref<HTMLElement | null>(null)
+const logBox = ref<HTMLElement | null>(null)
 
-function wsSend(msg: object): boolean {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg))
-    // 真实操作（行动/聊天/ACTIVE）刷新本地活跃态；心跳与 AFK 自身不算操作
-    const t = (msg as { type?: string }).type
-    if (t && t !== 'HEARTBEAT' && t !== 'AFK') noteActivity()
-    return true
-  }
-  return false
+/** 玩家名 → 稳定颜色 class（同一玩家在不同消息里颜色一致） */
+const NAME_PALETTE_SIZE = 8
+function nameColorClass(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return `pc-${h % NAME_PALETTE_SIZE}`
 }
 
-/** 心跳保活：只制造流量防空闲掐断，判活仍靠 onclose + 重连 */
-const { start: startHeartbeat, stop: stopHeartbeat } = useHeartbeat(() =>
-  wsSend({ type: 'HEARTBEAT', payload: {} }),
-)
+/** 玩家行动日志：与真人聊天分栏展示（进入/入座/开局/行动/待机/离开/终局等） */
+const actionLogs = ref<ChatMessage[]>([])
 
-/** 无操作检测：60s 无任何交互上报 AFK，恢复交互上报 ACTIVE（心跳不重置计时） */
-const { noteActivity, start: startAfk, stop: stopAfk } = useAfk({
-  send: (active) => wsSend({ type: active ? 'ACTIVE' : 'AFK', payload: {} }),
+function addActionLog(who: string, text: string): void {
+  actionLogs.value.push({
+    who,
+    text,
+    whoClass: who === 'system' ? 'system' : nameColorClass(who),
+  })
+  nextTick(() => {
+    const el = logBox.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+/**
+ * WS 生命周期（连接/重连/心跳/互踢/关房收尾）由公共 composable 承担；
+ * 这里只注入游戏专属的消息分发与断连时的临时态清理。
+ */
+const {
+  connected,
+  replacedNotice,
+  send: wsSend,
+  connect,
+  resume,
+  markServerClosed,
+} = useGameWebSocket({
+  path: '/ws/splendor',
+  roomId: () => room.value?.roomId,
+  playerName: () => myName.value,
+  onMessage: (msg) => handleWSMessage(msg),
+  onDisconnected: clearPick,
 })
 
 const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
   send: (text) => wsSend({ type: 'CHAT', payload: { text } }),
-  classifyWho: (who) => (who === 'system' ? 'system' : who === myName.value ? 'me' : 'spectator'),
+  classifyWho: (who) => (who === 'system' ? 'system' : nameColorClass(who)),
   scrollTarget: chatBox,
 })
-
-const connected = ref(false)
-const replacedNotice = ref(false)
-
-let ws: WebSocket | null = null
-let intentionalClose = false
-let roomClosedByServer = false
-let unmounted = false
-let retries = 0
-let reconnectTimer: number | null = null
-const MAX_RETRIES = 5
-const RECONNECT_DELAY_MS = 2000
 
 // ---- 派生状态 ----
 
@@ -388,51 +394,6 @@ function leaveRoom(): void {
   router.push('/lobby')
 }
 
-// ---- WebSocket ----
-
-function connectWS(roomId: string, playerName: string): void {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(
-    `${proto}//${location.host}/ws/splendor?roomId=${roomId}&playerName=${encodeURIComponent(playerName)}`,
-  )
-  ws.onopen = () => {
-    connected.value = true
-    replacedNotice.value = false
-    retries = 0
-    startHeartbeat()
-    startAfk()
-  }
-  ws.onmessage = (evt) => {
-    try {
-      handleWSMessage(JSON.parse(evt.data))
-    } catch (e) {
-      console.warn('WS parse error', e)
-    }
-  }
-  ws.onclose = (evt: CloseEvent) => {
-    connected.value = false
-    stopHeartbeat()
-    stopAfk()
-    clearPick()
-    if (roomClosedByServer) return
-    if (intentionalClose) return
-    if (evt?.reason === 'replaced by new connection') {
-      replacedNotice.value = true
-      return
-    }
-    if (retries < MAX_RETRIES) {
-      retries++
-      ElMessage.warning(`连接断开，正在重连（${retries}/${MAX_RETRIES}）...`)
-      reconnectTimer = window.setTimeout(() => connectWS(roomId, playerName), RECONNECT_DELAY_MS)
-    } else {
-      ElMessage.error('连接已断开，请刷新页面重试')
-    }
-  }
-  ws.onerror = () => {
-    connected.value = false
-  }
-}
-
 function handleWSMessage(msg: any): void {
   const t = msg.type
   const p = msg.payload
@@ -443,11 +404,11 @@ function handleWSMessage(msg: any): void {
       if (msg.playerName === myName.value && p?.snapshot) {
         applySnapshot(p.snapshot as SplendorSnapshot)
       }
-      addChatMsg('system', `${msg.playerName} 进入了房间`)
+      addActionLog('system', `${msg.playerName} 进入了房间`)
       break
     case 'SEAT_CHANGED':
       mergeRoom(msg)
-      addChatMsg(
+      addActionLog(
         'system',
         p?.seatNo != null ? `${msg.playerName} 坐到了 ${p.seatNo} 号位` : `${msg.playerName} 起身了`,
       )
@@ -455,14 +416,14 @@ function handleWSMessage(msg: any): void {
     case 'GAME_START':
       mergeRoom(msg)
       clearPick()
-      addChatMsg('system', '对局开始！')
+      addActionLog('system', '对局开始！')
       break
     case 'STATE_SYNC':
       // 载荷即个性化快照本体（协议 §2.2）
       if (p) applySnapshot(p as SplendorSnapshot)
       break
     case 'ACTION_DONE':
-      addChatMsg(msg.playerName, describeAction(p?.action, p?.detail))
+      addActionLog(msg.playerName, describeAction(p?.action, p?.detail))
       break
     case 'ACTION_REJECT':
       ElMessage.error(p?.message ?? '行动失败')
@@ -472,7 +433,7 @@ function handleWSMessage(msg: any): void {
       gameOver.value = true
       break
     case 'PLAYER_LEAVE':
-      addChatMsg('system', `${msg.playerName} 离开了房间`)
+      addActionLog('system', `${msg.playerName} 离开了房间`)
       break
     case 'PLAYER_AFK': {
       const name = msg.playerName as string
@@ -481,13 +442,11 @@ function handleWSMessage(msg: any): void {
       if (p?.afk && idx < 0) list.push(name)
       if (!p?.afk && idx >= 0) list.splice(idx, 1)
       if (room.value) room.value = { ...room.value, afkPlayers: list }
-      addChatMsg('system', `${name} ${p?.afk ? '进入待机' : '恢复了操作'}`)
+      addActionLog('system', `${name} ${p?.afk ? '进入待机' : '恢复了操作'}`)
       break
     }
     case 'ROOM_CLOSED':
-      roomClosedByServer = true
-      intentionalClose = true
-      stopAfk()
+      markServerClosed()
       forgetLastRoom()
       ElMessage.warning(p?.reason === '全员待机' ? '全员待机，房间已关闭' : '房主已解散房间')
       router.replace('/lobby')
@@ -503,86 +462,41 @@ function handleWSMessage(msg: any): void {
 
 /** 手动接管被替换的连接 */
 function resumeHere(): void {
-  const roomId = room.value?.roomId
-  if (!roomId || !myName.value) return
-  replacedNotice.value = false
-  retries = 0
-  connectWS(roomId, myName.value)
+  resume()
 }
 
-onMounted(async () => {
-  const roomId = route.params.roomId as string
-
-  if (!userStore.isLogin) {
-    router.replace('/login?redirect=' + encodeURIComponent('/splendor/' + roomId))
-    return
-  }
-  if (!userStore.userInfo) {
-    try {
-      await userStore.fetchProfile()
-    } catch {
-      // 下方统一按 userName 缺失处理
-    }
-  }
-  if (unmounted) return
-  const playerName = userStore.userInfo?.userName ?? ''
-  if (!playerName) {
-    ElMessage.error('用户信息未就绪，请重新登录')
-    router.replace('/lobby')
-    return
-  }
-  myName.value = playerName
-
-  let data: splendorApi.SplendorRoomData
-  try {
-    data = await splendorApi.getRoom(roomId, playerName)
-  } catch {
-    ElMessage.error('进入房间失败')
-    router.replace('/lobby')
-    return
-  }
-  if (!data.success || !data.room) {
-    ElMessage.error(data.error ?? '进入房间失败')
-    router.replace('/lobby')
-    return
-  }
-  if (unmounted) return
-
-  applyRoom(data)
-  rememberLastRoom('splendor', roomId, playerName)
-  connectWS(roomId, playerName)
-})
-
-onUnmounted(() => {
-  unmounted = true
-  intentionalClose = true
-  if (reconnectTimer !== null) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  if (ws) {
-    ws.onclose = null
-    ws.onerror = null
-    ws.close()
-    ws = null
-  }
+/** 进房引导（登录校验 / profile 补齐 / getRoom / 记住房间 / 连 WS）由公共 composable 承担 */
+useRoomEntry({
+  gameKey: 'splendor',
+  loginRedirect: (id) => `/splendor/${id}`,
+  fetchRoom: (id, name) => splendorApi.getRoom(id, name),
+  isValid: (data) => !!data.room,
+  applyRoom,
+  playerName: myName,
+  connect,
 })
 </script>
 
 <template>
   <div class="splendor-page">
-    <!-- 顶栏：房间号 / 状态 / 返回 -->
+    <!-- 顶栏：左=房间号/复制，中=轮数/规则/待办，右=返回/解散 -->
     <div class="room-bar">
-      <span class="room-id">房间号：<strong>{{ room?.roomId ?? '...' }}</strong></span>
-      <span v-if="snapshot" class="round-info">第 {{ snapshot.roundNo }} 轮</span>
-      <span v-if="snapshot?.pendingType" class="pending-tag">{{ pendingText }}</span>
-      <el-button size="small" @click="copyRoomId">📋 复制</el-button>
-      <el-button size="small" plain @click="router.push('/rules/splendor')">📖 规则</el-button>
-      <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">
-        🗑 解散房间
-      </el-button>
-      <el-button size="small" plain @click="goBackOrLobby(router)">← 返回上一页</el-button>
-      <el-button size="small" plain @click="leaveRoom">← 返回大厅</el-button>
+      <div class="bar-left">
+        <span class="room-id">房间号：<strong>{{ room?.roomId ?? '...' }}</strong></span>
+        <el-button size="small" @click="copyRoomId">📋 复制</el-button>
+      </div>
+      <div class="bar-center">
+        <span v-if="snapshot" class="round-info">第 {{ snapshot.roundNo }} 轮</span>
+        <span v-if="snapshot?.pendingType" class="pending-tag">{{ pendingText }}</span>
+        <el-button size="small" plain @click="router.push('/rules/splendor')">📖 规则</el-button>
+      </div>
+      <div class="bar-right">
+        <el-button size="small" plain @click="goBackOrLobby(router)">← 返回上一页</el-button>
+        <el-button size="small" plain @click="leaveRoom">← 返回大厅</el-button>
+        <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">
+          🗑 解散
+        </el-button>
+      </div>
     </div>
 
     <!-- 等待中：座位面板 -->
@@ -713,17 +627,19 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 逐色宝石合计：手中数 + 该色发展卡红利数 = 合计 -->
+          <!-- 逐色宝石合计：与手持宝石同样的 token 图标，一行内展示（含发展卡红利） -->
           <div class="gem-total">
-            <div class="gem-total-title">💎 各色宝石总数（含发展卡红利）</div>
-            <div class="gem-total-grid">
-              <div v-for="c in totalColors" :key="c" class="gem-total-row">
-                <span class="gt-dot" :style="gemStyle(c)"></span>
-                <span class="gt-label">{{ COLOR_LABELS[c] }}</span>
-                <span class="gt-sum" :class="{ zero: colorTotal(p, c) === 0 }">
-                  {{ colorTotal(p, c) }}
-                </span>
-              </div>
+            <div class="gem-total-title">💎 各色合计</div>
+            <div class="gem-total-row">
+              <span
+                v-for="c in totalColors"
+                :key="c"
+                class="gem-chip"
+                :style="gemStyle(c)"
+                :class="{ none: colorTotal(p, c) === 0 }"
+              >
+                {{ colorTotal(p, c) }}
+              </span>
             </div>
           </div>
         </section>
@@ -816,10 +732,8 @@ onUnmounted(() => {
         </section>
 
         <div v-if="pendingText" class="pending-bar">{{ pendingText }}</div>
-      </main>
 
-      <!-- 右列：贵族（右上角）+ 聊天 -->
-      <aside class="side-col">
+        <!-- 贵族栏：中间列底部（市场下方） -->
         <section class="panel nobles-panel">
           <h3 class="panel-title">👑 贵族</h3>
           <div class="nobles">
@@ -840,8 +754,12 @@ onUnmounted(() => {
             </div>
           </div>
         </section>
+      </main>
 
+      <!-- 右列：聊天 + 行动日志 -->
+      <aside class="side-col">
         <section class="panel chat-panel">
+          <h3 class="panel-title">💬 玩家聊天</h3>
           <div ref="chatBox" class="chat-messages">
             <div v-for="(msg, i) in chatMessages" :key="i" class="chat-msg">
               <span class="who" :class="msg.whoClass">
@@ -861,6 +779,18 @@ onUnmounted(() => {
             <el-button type="primary" size="small" :disabled="!chatText.trim()" @click="sendChat">
               发送
             </el-button>
+          </div>
+        </section>
+
+        <section class="panel log-panel">
+          <h3 class="panel-title">📜 行动日志</h3>
+          <div ref="logBox" class="chat-messages log-messages">
+            <div v-for="(msg, i) in actionLogs" :key="i" class="chat-msg">
+              <span class="who" :class="msg.whoClass">
+                {{ msg.who === 'system' ? '' : msg.who + ':' }}
+              </span>
+              <span>{{ msg.text }}</span>
+            </div>
           </div>
         </section>
       </aside>
@@ -953,38 +883,21 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
+@use '../../styles/room' as room;
+
+/* 顶栏 / 等待座位卡 / 待机标记与德国心脏病共用，见 src/styles/_room.scss */
+@include room.room-bar;
+@include room.round-info;
+@include room.room-waiting;
+@include room.afk-tag;
+
 .splendor-page {
   min-height: 100vh;
   padding: 20px 24px 40px;
   color: var(--ink);
 }
 
-/* ---- 顶栏 ---- */
-.room-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  max-width: 1200px;
-  margin: 0 auto 18px;
-  font-size: 14px;
-  color: var(--muted);
-
-  .room-id strong {
-    color: var(--ink);
-    font-size: 16px;
-    letter-spacing: 1px;
-    user-select: all;
-  }
-}
-
-.round-info {
-  padding: 2px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  font-size: 12px;
-}
-
+/* ---- 顶栏特有：待处理标签 ---- */
 .pending-tag {
   padding: 2px 10px;
   border-radius: 999px;
@@ -994,86 +907,7 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-/* ---- 等待中：座位 ---- */
-.waiting {
-  max-width: 720px;
-  margin: 40px auto;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.seat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 14px;
-}
-
-.seat-card {
-  padding: 18px 14px;
-  border-radius: var(--radius, 12px);
-  border: 1px dashed var(--line);
-  text-align: center;
-  cursor: pointer;
-  transition:
-    border-color 0.2s,
-    transform 0.2s;
-
-  &:hover {
-    transform: translateY(-2px);
-    border-color: var(--color-primary);
-  }
-
-  &.occupied {
-    border-style: solid;
-    cursor: default;
-    &:hover {
-      transform: none;
-      border-color: var(--line);
-    }
-  }
-
-  &.mine {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 1px var(--color-primary);
-  }
-}
-
-.seat-no {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.seat-player {
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.seat-conn {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-
-  &.on {
-    color: #2ed573;
-  }
-  &.off {
-    color: #e74c3c;
-  }
-}
-
-.waiting-ops {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
-.spectate-hint {
-  font-size: 13px;
-  color: var(--muted);
-}
+/* ---- 等待中样式见顶部 @include room.room-waiting ---- */
 
 /* ---- 牌桌三列：左=玩家面板（固定），中=银行+市场，右=贵族+聊天 ---- */
 .table-layout {
@@ -1090,6 +924,25 @@ onUnmounted(() => {
   top: 16px;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--scroll-thumb-hover);
+  }
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 @media (max-width: 1100px) {
@@ -1103,7 +956,7 @@ onUnmounted(() => {
 }
 
 .panel {
-  background: rgba(32, 32, 58, 0.6);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius, 12px);
   padding: 14px;
@@ -1435,20 +1288,7 @@ onUnmounted(() => {
   color: #f1c40f;
 }
 
-/* 待机标记：座位卡与对局玩家面板共用 */
-.afk-tag {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #b8860b;
-  background: rgba(241, 196, 15, 0.16);
-  border: 1px solid rgba(241, 196, 15, 0.4);
-  border-radius: 8px;
-  vertical-align: middle;
-  white-space: nowrap;
-}
+/* 待机标记：见顶部 @include room.afk-tag */
 
 /* 玩家宝石/加成与发展卡统一左对齐 */
 .player-assets {
@@ -1509,7 +1349,7 @@ onUnmounted(() => {
   color: var(--muted);
 }
 
-/* 逐色宝石合计：手中数 + 该色红利数 = 合计，两列紧凑排布 */
+/* 逐色宝石合计：与手持宝石同款 token，一行内横排 */
 .gem-total {
   margin-top: 8px;
   padding-top: 8px;
@@ -1522,43 +1362,10 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
-.gem-total-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px 10px;
-}
-
 .gem-total-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-}
-
-.gt-dot {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-.gt-label {
-  color: var(--muted);
-  flex: none;
-}
-
-.gt-sum {
-  color: #f1c40f;
-  font-size: 13px;
-  font-weight: 700;
-  margin-left: auto;
-
-  &.zero {
-    color: var(--muted);
-    font-weight: 500;
-  }
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .reserved-title {
@@ -1573,11 +1380,13 @@ onUnmounted(() => {
   flex: 1;
 }
 
-/* ---- 贵族：方形（长方形）卡片，与发展卡同一视觉语言 ---- */
+/* ---- 贵族：方形卡片，中间列底部横向铺开 ---- */
 .nobles {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
 }
 
 .noble {
@@ -1585,6 +1394,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  min-width: 96px;
   padding: 10px 8px;
   border-radius: 10px;
   background: #f5f1e8;
@@ -1612,20 +1422,53 @@ onUnmounted(() => {
   justify-content: center;
 }
 
-/* ---- 聊天 ---- */
-.chat-panel {
+/* ---- 聊天 / 行动日志 ---- */
+.chat-panel,
+.log-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.chat-panel {
+  margin-bottom: 14px;
+}
+.log-panel {
   margin-bottom: 0;
 }
 
 .chat-messages {
-  height: 300px;
+  height: 200px;
   overflow-y: auto;
-  padding: 10px;
+  padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--well-bg);
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+
+  /* WebKit 细滚动条：默认淡化，悬停容器时才加深 */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--scroll-thumb-hover);
+  }
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* 行动日志：只读，略高一点容纳更多条目 */
+.log-messages {
+  height: 240px;
 }
 
 .chat-msg {
@@ -1638,15 +1481,73 @@ onUnmounted(() => {
   margin-right: 6px;
   font-weight: 600;
 
+  /* 按玩家名稳定映射的颜色，聊天与行动日志共用 */
+  &.pc-0 {
+    color: #4fc3f7;
+  }
+  &.pc-1 {
+    color: #ff8a80;
+  }
+  &.pc-2 {
+    color: #b9f6ca;
+  }
+  &.pc-3 {
+    color: #ffd180;
+  }
+  &.pc-4 {
+    color: #b388ff;
+  }
+  &.pc-5 {
+    color: #84ffff;
+  }
+  &.pc-6 {
+    color: #f48fb1;
+  }
+  &.pc-7 {
+    color: #a5d6a7;
+  }
+
+  /* 兼容旧身份样式（如外部传入） */
   &.me {
     color: #2ed573;
   }
   &.spectator {
     color: #7f8fa6;
   }
+  &.action {
+    color: #00aaff;
+  }
   &.system {
     color: #f39c12;
     font-style: italic;
+  }
+}
+
+/* 白天模式：部分浅色在白底偏淡，统一加深以保证可读 */
+[data-theme='light'] .who {
+  &.pc-0 {
+    color: #0277bd;
+  }
+  &.pc-1 {
+    color: #c62828;
+  }
+  &.pc-2 {
+    color: #2e7d32;
+  }
+  &.pc-3 {
+    color: #ef6c00;
+  }
+  &.pc-4 {
+    color: #6a1b9a;
+  }
+  &.pc-5 {
+    color: #00838f;
+  }
+  &.pc-6 {
+    color: #ad1457;
+  }
+  &.pc-7 {
+    color: #558b2f;
   }
 }
 

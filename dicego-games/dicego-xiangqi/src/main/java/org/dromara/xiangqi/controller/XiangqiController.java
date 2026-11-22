@@ -8,6 +8,7 @@ import org.dromara.xiangqi.enums.PlayerColor;
 import org.dromara.xiangqi.handler.XiangqiWebSocketHandler;
 import org.dromara.xiangqi.manager.XiangqiRoom;
 import org.dromara.game.common.room.GameRoomManager;
+import org.dromara.game.common.util.MessageTypeParser;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -54,10 +55,8 @@ public class XiangqiController {
             result.put("error", "玩家名不能为空");
             return result;
         }
-        PlayerColor color;
-        try {
-            color = PlayerColor.valueOf(bo.getColor().toUpperCase());
-        } catch (Exception e) {
+        PlayerColor color = MessageTypeParser.parse(PlayerColor.class, bo.getColor()).orElse(null);
+        if (color == null) {
             result.put("success", false);
             result.put("error", "无效的颜色");
             fillRoom(result, room, bo.getPlayerName());

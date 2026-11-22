@@ -85,6 +85,32 @@ describe('BackToRoom', () => {
     expect(localStorage.getItem('dicego:lastRoom')).toBeNull()
   })
 
+  it('对局已结束时不渲染并清除记录（Splendor）', async () => {
+    rememberLastRoom('splendor', 'FIN1', 'alice')
+    mocks.splendor.getRoom.mockResolvedValue({
+      success: true,
+      room: { roomId: 'FIN1', status: 'FINISHED', maxPlayers: 4, seats: [] },
+    })
+    const w = mountCard()
+    await flushPromises()
+
+    expect(w.find('.back-to-room').exists()).toBe(false)
+    expect(localStorage.getItem('dicego:lastRoom')).toBeNull()
+  })
+
+  it('对局已结束时不渲染并清除记录（象棋）', async () => {
+    rememberLastRoom('xiangqi', 'FIN2', 'alice')
+    mocks.chess.getRoom.mockResolvedValue({
+      success: true,
+      room: { roomId: 'FIN2', status: 'FINISHED', redPlayerName: 'alice' },
+    })
+    const w = mountCard()
+    await flushPromises()
+
+    expect(w.find('.back-to-room').exists()).toBe(false)
+    expect(localStorage.getItem('dicego:lastRoom')).toBeNull()
+  })
+
   it('点关闭按钮清除记录', async () => {
     rememberLastRoom('splendor', 'ABC123', 'alice')
     mocks.splendor.getRoom.mockResolvedValue({

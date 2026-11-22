@@ -3,8 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
-import * as chessApi from '@/api/xiangqi'
-import * as splendorApi from '@/api/splendor'
+import { PLAYABLE_ADAPTERS, adapterOf } from '@/constants/gameAdapters'
+import { getOnlineCount } from '@/api/online'
 import { useRoom } from '@/composables/useRoom'
 import { useUserStore } from '@/store/user'
 import { ZONES, gamesInZone, resolveLevel } from '@/constants/catalog'
@@ -18,6 +18,12 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+/** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 房间层） */
+const nav = computed(() => resolveLevel(route.query))
+
+/** 当前房间层游戏的能力适配器（D9：建房/列表/跳转全部查表，不再写 if/else） */
+const adapter = computed(() => adapterOf(nav.value.game?.key))
+
 const {
   rooms,
   waitingCount,
@@ -30,18 +36,40 @@ const {
   stopPolling,
 } = useRoom({
   listRooms: () =>
-    nav.value.game?.key === 'splendor' ? splendorApi.listRooms() : chessApi.listRooms(),
+    adapter.value?.listRooms() ??
+    Promise.resolve({ rooms: [], waitingCount: 0, playingCount: 0 }),
   onError: (error) => ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试')),
 })
 
-/** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 房间层） */
-const nav = computed(() => resolveLevel(route.query))
+/** 平台在线人数：顶栏常显，30s 刷新一次（后端按玩家名去重，跨游戏合并） */
+const onlineCount = ref<number | null>(null)
+let onlineTimer: number | null = null
 
-/** 房间层当前游戏是否为 Splendor（决定建房参数与跳转路由） */
-const isSplendor = computed(() => nav.value.game?.key === 'splendor')
+/** 装饰性信息：请求失败保留上次值，不弹错、不打断大厅 */
+async function refreshOnline(): Promise<void> {
+  try {
+    const data = await getOnlineCount()
+    if (data?.success) onlineCount.value = Number(data.onlineCount) || 0
+  } catch {
+    // 在线人数不影响大厅主流程，静默兜底
+  }
+}
 
-/** Splendor 建房容量（2-4） */
+/** 建房容量：切换游戏时回落到该游戏的默认值 */
 const capacity = ref(4)
+watch(
+  adapter,
+  (current) => {
+    if (current) capacity.value = current.defaultCapacity
+  },
+  { immediate: true },
+)
+
+/** 建房提示文案（各游戏容量与开局条件不同） */
+const createHint = computed(() => {
+  if (!adapter.value) return '选择一款可在线对战的桌游后即可建房'
+  return `创建后进入房间选座（1-${adapter.value.maxPlayers} 号位），${adapter.value.minPlayers} 人以上入座、房主即可开局`
+})
 
 const joinRoomId = ref('')
 const loading = ref(false)
@@ -51,6 +79,9 @@ const avatarChar = computed(() => {
   const name = userStore.userInfo?.nickName || userStore.userInfo?.userName || ''
   return name ? name.charAt(0) : '?'
 })
+
+/** 有上传头像时显示图片，否则回退首字母 */
+const avatarUrl = computed(() => userStore.userInfo?.avatarUrl || '')
 
 /** 状态归一化 + 中文映射（与 demo 的 statusText 一致） */
 function statusText(status: string): string {
@@ -78,26 +109,19 @@ async function handleCreate(): Promise<void> {
     ElMessage.warning('用户信息未就绪，请刷新重试')
     return
   }
+  const current = adapter.value
+  if (!current) {
+    ElMessage.warning('该游戏暂不支持在线对战')
+    return
+  }
   loading.value = true
   try {
-    if (isSplendor.value) {
-      const data = await splendorApi.createRoom(userName, capacity.value)
-      if (data.success && data.room) {
-        router.push(`/splendor/${data.room.roomId}`)
-        return
-      }
-      ElMessage.error(data.error ?? '创建房间失败')
-    } else {
-      const data = await chessApi.createRoom(userName)
-      if (data.success && data.room) {
-        const roomId = (data.room as { roomId?: string }).roomId
-        if (roomId) {
-          router.push(`/game/${roomId}`)
-          return
-        }
-      }
-      ElMessage.error(data.error ?? '创建房间失败')
+    const data = await current.createRoom(userName, capacity.value)
+    if (data.success && data.roomId) {
+      router.push(current.route(data.roomId))
+      return
     }
+    ElMessage.error(data.error ?? '创建房间失败')
   } catch (error) {
     ElMessage.error(errMsg(error, '创建房间失败，请稍后重试'))
   } finally {
@@ -109,23 +133,27 @@ async function handleCreate(): Promise<void> {
 async function handleJoin(roomId: string): Promise<void> {
   loading.value = true
   try {
-    const [chess, splendor] = await Promise.allSettled([
-      chessApi.getRoom(roomId),
-      splendorApi.getRoom(roomId),
-    ])
-    const chs = chess.status === 'fulfilled' && chess.value.success ? chess.value : null
-    const spl = splendor.status === 'fulfilled' && splendor.value.success ? splendor.value : null
-    if (spl && (!chs || isSplendor.value)) {
-      router.push(`/splendor/${roomId}`)
-      return
-    }
-    if (chs) {
-      router.push(`/game/${roomId}`)
-      return
-    }
-    ElMessage.error(
-      (chess.status === 'fulfilled' ? chess.value.error : null) ?? '加入房间失败',
+    const results = await Promise.allSettled(
+      PLAYABLE_ADAPTERS.map((item) => item.probeRoom(roomId)),
     )
+    const hits: { key: string; route: string }[] = []
+    let firstError: string | undefined
+    results.forEach((result, index) => {
+      const item = PLAYABLE_ADAPTERS[index]
+      if (result.status === 'fulfilled' && result.value.success) {
+        hits.push({ key: item.key, route: item.route(roomId) })
+      } else if (result.status === 'fulfilled' && !firstError) {
+        firstError = result.value.error
+      }
+    })
+    // 同号命中多个游戏时优先当前房间层的游戏
+    const preferred =
+      hits.find((hit) => hit.key === adapter.value?.key) ?? hits[0]
+    if (preferred) {
+      router.push(preferred.route)
+      return
+    }
+    ElMessage.error(firstError ?? '加入房间失败')
   } catch (error) {
     ElMessage.error(errMsg(error, '加入房间失败，请稍后重试'))
   } finally {
@@ -171,6 +199,8 @@ watch(
 )
 
 onMounted(async () => {
+  void refreshOnline()
+  onlineTimer = window.setInterval(() => void refreshOnline(), 30_000)
   // 刷新后 store 仅水合了 token，需先补齐 userInfo；失败不阻断匿名列表
   if (userStore.isLogin && !userStore.userInfo) {
     try {
@@ -186,6 +216,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPolling()
+  if (onlineTimer !== null) {
+    window.clearInterval(onlineTimer)
+    onlineTimer = null
+  }
 })
 </script>
 
@@ -195,6 +229,10 @@ onUnmounted(() => {
       <div class="lobby-top-in">
         <img class="lobby-logo" :src="logoWordmark" alt="DiceGo" />
         <div class="lobby-top-actions">
+          <span class="online-badge" title="统计所有游戏中当前在线的玩家（同一账号只算一人）">
+            <i class="online-dot" aria-hidden="true"></i>
+            在线 <b>{{ onlineCount ?? '—' }}</b> 人
+          </span>
           <button
             type="button"
             class="lobby-user-link"
@@ -202,7 +240,8 @@ onUnmounted(() => {
             :title="userStore.isLogin ? '个人资料' : '请先登录'"
             @click="userStore.isLogin && router.push('/profile')"
           >
-            <span class="lobby-avatar">{{ avatarChar }}</span>
+            <img v-if="avatarUrl" :src="avatarUrl" alt="头像" class="lobby-avatar lobby-avatar-image" />
+            <span v-else class="lobby-avatar">{{ avatarChar }}</span>
             <span class="lobby-user">{{
               userStore.userInfo?.nickName || userStore.userInfo?.userName || '未登录'
             }}</span>
@@ -284,12 +323,10 @@ onUnmounted(() => {
         <div class="room-ops">
           <div class="op rise" style="--i: 0">
             <h2 class="op-title"><span class="stepno">开局</span>创建房间</h2>
-            <div v-if="isSplendor" class="op-cap">
+            <div v-if="adapter && adapter.capacities.length > 1" class="op-cap">
               <label class="cap-label" for="cap-select">人数上限</label>
               <select id="cap-select" v-model.number="capacity" class="cap-select">
-                <option :value="2">2 人</option>
-                <option :value="3">3 人</option>
-                <option :value="4">4 人</option>
+                <option v-for="n in adapter.capacities" :key="n" :value="n">{{ n }} 人</option>
               </select>
             </div>
             <button
@@ -300,13 +337,7 @@ onUnmounted(() => {
             >
               <span v-if="loading" class="spin"></span>创建房间
             </button>
-            <p class="hint">
-              {{
-                isSplendor
-                  ? '创建后进入房间选座（1-4 号位），2 人以上入座房主即可开局'
-                  : '创建房间后进入房间选择红方/黑方座位，双方落座即开战'
-              }}
-            </p>
+            <p class="hint">{{ createHint }}</p>
           </div>
           <form class="op rise" style="--i: 1" @submit.prevent>
             <h2 class="op-title"><span class="stepno">赴约</span>输入房间号加入</h2>
@@ -372,22 +403,13 @@ onUnmounted(() => {
               :style="{ '--i': i }"
             >
               <span class="rid">{{ room.roomId }}</span>
-              <span v-if="isSplendor" class="seats">
+              <span class="seats">
                 <span class="seat seat-red">
-                  <span class="pip"></span>房主 {{ room.hostName ?? '?' }}
+                  <span class="pip"></span>房主 {{ room.hostName || '?' }}
                 </span>
                 <span class="seat seat-black">
-                  <span class="pip"></span>{{ room.seatedCount ?? 0 }}/{{ room.maxPlayers ?? 4 }} 人
+                  <span class="pip"></span>{{ room.seatedCount }}/{{ room.maxPlayers }} 人
                 </span>
-              </span>
-              <span v-else class="seats">
-                <span class="seat seat-red">
-                  <span class="pip"></span>{{ room.redPlayerName || '空位' }}
-                </span>
-                <span v-if="room.blackPlayerName" class="seat seat-black">
-                  <span class="pip"></span>{{ room.blackPlayerName }}
-                </span>
-                <span v-else class="seat seat-open"><span class="pip"></span>空位</span>
               </span>
               <span class="room-status" :class="'status-' + room.status.toLowerCase()">
                 {{ statusText(room.status) }}
@@ -444,7 +466,7 @@ onUnmounted(() => {
 /* ---- 顶栏 ---- */
 .lobby-top {
   border-bottom: 1px solid var(--line);
-  background: rgba(26, 26, 46, 0.8);
+  background: var(--surface-3);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -470,6 +492,26 @@ onUnmounted(() => {
   font-size: 14px;
   color: var(--muted);
   min-width: 0;
+}
+.online-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  b { color: var(--ink); font-weight: 700; }
+}
+.online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4f9d69;
+  box-shadow: 0 0 0 3px rgba(79, 157, 105, 0.18);
+  flex: none;
 }
 .lobby-user-link {
   display: inline-flex;
@@ -502,6 +544,11 @@ onUnmounted(() => {
   font-size: 13px;
   font-family: var(--font-display);
   flex: none;
+}
+
+.lobby-avatar-image {
+  object-fit: cover;
+  display: block;
 }
 .lobby-user {
   overflow: hidden;
@@ -651,7 +698,7 @@ input[type='text'] {
   }
 }
 .fastjoin {
-  background: rgba(32, 32, 58, 0.7);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px 20px;
@@ -684,7 +731,7 @@ input[type='text'] {
   gap: 16px;
   margin-top: 20px;
   padding: 18px 22px;
-  background: rgba(32, 32, 58, 0.7);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
@@ -723,7 +770,7 @@ input[type='text'] {
   }
 }
 .op {
-  background: rgba(32, 32, 58, 0.7);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 22px;
@@ -783,7 +830,7 @@ input[type='text'] {
 
 /* ---- 房间列表 ---- */
 .roomlist {
-  background: rgba(32, 32, 58, 0.5);
+  background: var(--surface-4);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   margin-bottom: clamp(48px, 6vw, 80px);
@@ -824,7 +871,7 @@ input[type='text'] {
     border-bottom: none;
   }
   &:hover {
-    background: rgba(32, 32, 58, 0.8);
+    background: var(--surface-3);
   }
 }
 .rid {

@@ -129,7 +129,7 @@ const heading = computed(
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(32, 32, 58, 0.5);
+  background: var(--surface-4);
 }
 .toc-title {
   font-family: var(--font-display);
@@ -160,7 +160,7 @@ const heading = computed(
   padding: 20px 24px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(32, 32, 58, 0.5);
+  background: var(--surface-4);
 }
 .rule-section h2 {
   display: flex;

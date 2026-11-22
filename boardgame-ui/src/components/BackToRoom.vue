@@ -2,8 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import * as splendorApi from '@/api/splendor'
-import * as chessApi from '@/api/xiangqi'
+import { adapterOf } from '@/constants/gameAdapters'
 import { findGame } from '@/constants/catalog'
 import {
   forgetLastRoom,
@@ -22,13 +21,9 @@ const count = ref('')
 const gameName = computed(() =>
   entry.value ? (findGame(entry.value.gameKey)?.name ?? entry.value.gameKey) : '',
 )
-/** 目标路由：Splendor 与象棋的对局页路径不同 */
+/** 目标路由：查适配器表，新增游戏无需改这里 */
 const target = computed(() =>
-  entry.value
-    ? entry.value.gameKey === 'splendor'
-      ? `/splendor/${entry.value.roomId}`
-      : `/game/${entry.value.roomId}`
-    : '',
+  entry.value ? (adapterOf(entry.value.gameKey)?.route(entry.value.roomId) ?? '') : '',
 )
 
 onMounted(async () => {
@@ -36,28 +31,21 @@ onMounted(async () => {
   const saved = readLastRoom(owner)
   if (!saved) return
 
+  const adapter = adapterOf(saved.gameKey)
+  if (!adapter) {
+    forgetLastRoom()
+    return
+  }
+
   try {
-    if (saved.gameKey === 'splendor') {
-      const data = await splendorApi.getRoom(saved.roomId, owner)
-      if (!data.success || !data.room) {
-        forgetLastRoom()
-        return
-      }
-      const room = data.room
-      const seated = room.seats?.filter((s) => !!s.playerName).length ?? 0
-      count.value = `${seated}/${room.maxPlayers}`
-      label.value = room.hostName ? `房主 ${room.hostName}` : ''
-    } else {
-      const data = await chessApi.getRoom(saved.roomId, owner)
-      if (!data.success || !data.room) {
-        forgetLastRoom()
-        return
-      }
-      const room = data.room
-      const seated = [room.redPlayerName, room.blackPlayerName].filter(Boolean).length
-      count.value = `${seated}/2`
-      label.value = ''
+    const probe = await adapter.probeRoom(saved.roomId, owner)
+    // 房间不存在或对局已结束：不再提供"回到房间"
+    if (!probe.success || probe.status === 'FINISHED') {
+      forgetLastRoom()
+      return
     }
+    count.value = `${probe.seatedCount ?? 0}/${probe.maxPlayers ?? 2}`
+    label.value = probe.hostName ? `房主 ${probe.hostName}` : ''
     entry.value = saved
   } catch {
     // 网络异常：保留记录，本次不显示（下次进大厅再试）
@@ -98,7 +86,7 @@ function dismiss(): void {
   align-items: stretch;
   border: 1px solid var(--accent-line, var(--line));
   border-radius: 12px;
-  background: rgba(24, 24, 44, 0.94);
+  background: var(--surface-3);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   overflow: hidden;
   animation: btr-in 0.35s var(--ease, ease) both;

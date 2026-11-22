@@ -27,6 +27,24 @@ const mocks = vi.hoisted(() => ({
     standUp: vi.fn(),
     getRoom: vi.fn(),
   },
+  hg: {
+    listRooms: vi.fn(),
+    createRoom: vi.fn(),
+    takeSeat: vi.fn(),
+    standUp: vi.fn(),
+    getRoom: vi.fn(),
+  },
+  ma: {
+    listRooms: vi.fn(),
+    createRoom: vi.fn(),
+    takeSeat: vi.fn(),
+    standUp: vi.fn(),
+    getRoom: vi.fn(),
+  },
+  // 在线人数是装饰性信息：给默认成功实现，避免各 describe 挂载时产生未处理 rejection
+  online: {
+    getOnlineCount: vi.fn(async () => ({ success: true, onlineCount: 7 })),
+  },
 }))
 
 vi.mock('vue-router', () => ({
@@ -36,6 +54,9 @@ vi.mock('vue-router', () => ({
 vi.mock('@/store/user', () => ({ useUserStore: () => mocks.store }))
 vi.mock('@/api/xiangqi', () => mocks.api)
 vi.mock('@/api/splendor', () => mocks.splendor)
+vi.mock('@/api/halliGalli', () => mocks.hg)
+vi.mock('@/api/magicalAthlete', () => mocks.ma)
+vi.mock('@/api/online', () => mocks.online)
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)
@@ -127,6 +148,8 @@ describe('lobby join navigation', () => {
     mocks.api.listRooms.mockResolvedValue(oneWaiting)
     // 并行探测的另一路：缺省按"房间不存在"落定，保证 allSettled 同步收敛
     mocks.splendor.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+    mocks.hg.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+    mocks.ma.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
   })
 
   it('join validates room via getRoom then navigates (seating happens in-room)', async () => {
@@ -136,7 +159,7 @@ describe('lobby join navigation', () => {
     const joinBtn = wrapper.findAll('button').find((b) => b.text().trim() === '加入' && b.attributes('disabled') === undefined)
     await joinBtn!.trigger('click')
     await flushPromises()
-    expect(mocks.api.getRoom).toHaveBeenCalledWith('ABC123')
+    expect(mocks.api.getRoom).toHaveBeenCalledWith('ABC123', undefined)
     expect(mocks.push).toHaveBeenCalledWith('/game/ABC123')
   })
 
@@ -160,7 +183,7 @@ describe('lobby join navigation', () => {
     await w.find('input[placeholder="房间号(如 ABC123)"]').setValue('ABC123')
     await buttonByText(w, '加入')!.trigger('click')
     await flushPromises()
-    expect(mocks.api.getRoom).toHaveBeenCalledWith('ABC123')
+    expect(mocks.api.getRoom).toHaveBeenCalledWith('ABC123', undefined)
     expect(mocks.push).toHaveBeenCalledWith('/game/ABC123')
   })
 })
@@ -174,6 +197,8 @@ describe('lobby splendor level 2', () => {
     mocks.store.userInfo = { userName: 'alice' }
     mocks.splendor.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
     mocks.api.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+    mocks.hg.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
+    mocks.ma.getRoom.mockResolvedValue({ success: false, error: '房间不存在' })
   })
 
   it('lists splendor rooms via splendor api and renders host/seated info', async () => {
@@ -207,7 +232,7 @@ describe('lobby splendor level 2', () => {
     await w.find('input[placeholder="房间号(如 ABC123)"]').setValue('S3')
     await buttonByText(w, '加入')!.trigger('click')
     await flushPromises()
-    expect(mocks.splendor.getRoom).toHaveBeenCalledWith('S3')
+    expect(mocks.splendor.getRoom).toHaveBeenCalledWith('S3', undefined)
     expect(mocks.push).toHaveBeenCalledWith('/splendor/S3')
   })
 })
@@ -482,5 +507,37 @@ describe('lobby list states', () => {
     await flushPromises()
     expect(mocks.api.createRoom).toHaveBeenCalledWith('alice')
     expect(mocks.push).toHaveBeenCalledWith('/game/NEW001')
+  })
+})
+
+describe('大厅在线人数', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.isLogin = true
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.api.listRooms.mockResolvedValue(emptyList)
+    mocks.online.getOnlineCount.mockResolvedValue({ success: true, onlineCount: 7 })
+  })
+
+  it('顶栏展示平台在线人数并请求 /api/online', async () => {
+    const wrapper = mountLobby()
+    await flushPromises()
+
+    expect(mocks.online.getOnlineCount).toHaveBeenCalled()
+    const badge = wrapper.find('.online-badge')
+    expect(badge.exists(), '顶栏应有在线人数徽标').toBe(true)
+    expect(badge.text()).toContain('7')
+  })
+
+  it('接口失败时保持占位符且不弹错误', async () => {
+    mocks.online.getOnlineCount.mockRejectedValueOnce(new Error('network'))
+    const errorSpy = vi.spyOn(ElMessage, 'error').mockImplementation(() => ({}) as any)
+
+    const wrapper = mountLobby()
+    await flushPromises()
+
+    expect(wrapper.find('.online-badge').text()).toContain('—')
+    expect(errorSpy, '装饰性信息失败不应打断大厅').not.toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })

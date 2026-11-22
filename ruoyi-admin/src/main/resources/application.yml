@@ -116,6 +116,8 @@ security:
     - /ws/splendor
     - /ws/splendor/**
     - /api/splendor/**
+    # 平台在线人数（只读统计，允许未登录查看）
+    - /api/online
 
 # MyBatisPlus配置
 # https://baomidou.com/config/

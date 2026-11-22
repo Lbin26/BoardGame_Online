@@ -9,6 +9,7 @@ import org.dromara.xiangqi.enums.XiangqiMessageType;
 import org.dromara.game.common.enums.RoomStatus;
 import org.dromara.xiangqi.manager.XiangqiRoom;
 import org.dromara.game.common.room.GameRoomManager;
+import org.dromara.game.common.util.MessageTypeParser;
 import org.dromara.game.common.ws.AbstractGameWebSocketHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
@@ -23,11 +24,6 @@ public class XiangqiWebSocketHandler extends AbstractGameWebSocketHandler<Xiangq
 
     public XiangqiWebSocketHandler(GameRoomManager<XiangqiRoom> roomManager) {
         super(roomManager);
-    }
-
-    @Override
-    protected boolean isHost(XiangqiRoom room, String playerName) {
-        return playerName != null && playerName.equals(room.getHostName());
     }
 
     @Override
@@ -50,12 +46,9 @@ public class XiangqiWebSocketHandler extends AbstractGameWebSocketHandler<Xiangq
     protected void handleGameMessage(WebSocketSession session, XiangqiRoom room, String roomId,
                                      String playerName, String type, JsonNode node) {
         // 基类已兜底解析异常；未知类型在此静默忽略
-        XiangqiMessageType msgType;
-        try {
-            msgType = XiangqiMessageType.valueOf(type.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return;
-        }
+        XiangqiMessageType msgType =
+            MessageTypeParser.parse(XiangqiMessageType.class, type).orElse(null);
+        if (msgType == null) return;
         switch (msgType) {
             case MOVE -> handleMove(session, room, roomId, playerName, node);
             case RESIGN -> handleResign(room, roomId, playerName);

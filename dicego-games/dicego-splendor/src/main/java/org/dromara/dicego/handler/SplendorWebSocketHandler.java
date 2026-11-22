@@ -11,6 +11,7 @@ import org.dromara.dicego.manager.SplendorRoom;
 import org.dromara.game.common.domain.vo.GameMessage;
 import org.dromara.game.common.enums.GameMessageType;
 import org.dromara.game.common.room.GameRoomManager;
+import org.dromara.game.common.util.MessageTypeParser;
 import org.dromara.game.common.ws.AbstractGameWebSocketHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
@@ -33,11 +34,6 @@ public class SplendorWebSocketHandler extends AbstractGameWebSocketHandler<Splen
 
     public SplendorWebSocketHandler(GameRoomManager<SplendorRoom> roomManager) {
         super(roomManager);
-    }
-
-    @Override
-    protected boolean isHost(SplendorRoom room, String playerName) {
-        return playerName != null && playerName.equals(room.getHostName());
     }
 
     @Override
@@ -64,12 +60,9 @@ public class SplendorWebSocketHandler extends AbstractGameWebSocketHandler<Splen
     @Override
     protected void handleGameMessage(WebSocketSession session, SplendorRoom room, String roomId,
                                      String playerName, String type, JsonNode node) {
-        SplendorMessageType msgType;
-        try {
-            msgType = SplendorMessageType.valueOf(type.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return;
-        }
+        SplendorMessageType msgType =
+            MessageTypeParser.parse(SplendorMessageType.class, type).orElse(null);
+        if (msgType == null) return;
         switch (msgType) {
             case START_GAME -> handleStartGame(session, room, roomId, playerName);
             case TAKE_GEMS -> handleTakeGems(session, room, roomId, playerName, type, node);

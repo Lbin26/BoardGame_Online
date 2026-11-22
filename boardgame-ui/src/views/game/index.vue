@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import * as chessApi from '@/api/xiangqi'
 import type { RoomInfo } from '@/api/xiangqi'
 import ChessBoard from '@/components/ChessBoard.vue'
 import SeatPicker from '@/components/SeatPicker.vue'
-import { useAfk } from '@/composables/useAfk'
 import { useChat } from '@/composables/useChat'
-import { useHeartbeat } from '@/composables/useHeartbeat'
-import { forgetLastRoom, rememberLastRoom } from '@/composables/useLastRoom'
-import { useUserStore } from '@/store/user'
+import { useGameWebSocket } from '@/composables/useGameWebSocket'
+import { forgetLastRoom } from '@/composables/useLastRoom'
+import { useRoomEntry } from '@/composables/useRoomEntry'
 import { getPieceAt } from '@/utils/board'
 import { copyText } from '@/utils/clipboard'
 import { goBackOrLobby } from '@/utils/navigation'
@@ -40,9 +39,7 @@ interface Cell {
   col: number
 }
 
-const route = useRoute()
 const router = useRouter()
-const userStore = useUserStore()
 
 const room = ref<RoomInfo | null>(null)
 const pieces = ref<ChessPiece[]>([])
@@ -59,25 +56,23 @@ const inCheck = ref(false)
 
 const chatBox = ref<HTMLElement | null>(null)
 
-/** WS 就绪时发送 JSON 消息；返回是否发出 */
-function wsSend(msg: object): boolean {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg))
-    const t = (msg as { type?: string }).type
-    if (t && t !== 'HEARTBEAT' && t !== 'AFK') noteActivity()
-    return true
-  }
-  return false
-}
-
-/** 心跳保活：只制造流量防空闲掐断，判活仍靠 onclose + 重连 */
-const { start: startHeartbeat, stop: stopHeartbeat } = useHeartbeat(() =>
-  wsSend({ type: 'HEARTBEAT', payload: {} }),
-)
-
-/** 无操作检测：60s 无交互上报 AFK，恢复交互上报 ACTIVE */
-const { noteActivity, start: startAfk, stop: stopAfk } = useAfk({
-  send: (active) => wsSend({ type: active ? 'ACTIVE' : 'AFK', payload: {} }),
+/**
+ * WS 生命周期（连接/重连/心跳/互踢/关房收尾）由公共 composable 承担；
+ * 这里只注入游戏专属的消息分发与断连时的临时态清理。
+ */
+const {
+  connected,
+  replacedNotice,
+  send: wsSend,
+  connect,
+  resume,
+  markServerClosed,
+} = useGameWebSocket({
+  path: '/ws/chess',
+  roomId: () => room.value?.roomId,
+  playerName: () => myName.value,
+  onMessage: (msg) => handleWSMessage(msg),
+  onDisconnected: clearSelection,
 })
 
 const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
@@ -93,23 +88,9 @@ const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
   scrollTarget: chatBox,
 })
 
-const connected = ref(false)
-/** 被其他标签页/窗口的同名连接替换：停止自动重连，避免互踢循环 */
-const replacedNotice = ref(false)
-
 /** 无座时的选座面板 / 已入座时主动换座 */
 const pickerOpen = ref(false)
 const switching = ref(false)
-
-let ws: WebSocket | null = null
-let intentionalClose = false
-let roomClosedByServer = false
-/** 挂载 await 期间用户可能已离开：续体不得再建 WS/改状态 */
-let unmounted = false
-let retries = 0
-let reconnectTimer: number | null = null
-const MAX_RETRIES = 5
-const RECONNECT_DELAY_MS = 2000
 
 /** 是否房主（建房者） */
 const isHost = computed(() => !!room.value?.hostName && room.value.hostName === myName.value)
@@ -200,52 +181,6 @@ function clearSelection(): void {
   validMoves.value = []
 }
 
-function connectWS(roomId: string, playerName: string): void {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(
-    `${proto}//${location.host}/ws/chess?roomId=${roomId}&playerName=${encodeURIComponent(playerName)}`,
-  )
-
-  ws.onopen = () => {
-    connected.value = true
-    replacedNotice.value = false
-    retries = 0
-    startHeartbeat()
-    startAfk()
-  }
-  ws.onmessage = (evt) => {
-    try {
-      handleWSMessage(JSON.parse(evt.data))
-    } catch (e) {
-      console.warn('WS parse error', e)
-    }
-  }
-  ws.onclose = (evt: CloseEvent) => {
-    connected.value = false
-    stopHeartbeat()
-    stopAfk()
-    clearSelection()
-    if (roomClosedByServer) return
-    if (intentionalClose) return
-    // 同房间同名连接被新标签页替换：不重连（否则两页互踢成死循环），提示手动接管
-    if (evt?.reason === 'replaced by new connection') {
-      replacedNotice.value = true
-      return
-    }
-    if (retries < MAX_RETRIES) {
-      retries++
-      ElMessage.warning(`连接断开，正在重连（${retries}/${MAX_RETRIES}）...`)
-      reconnectTimer = window.setTimeout(() => connectWS(roomId, playerName), RECONNECT_DELAY_MS)
-    } else {
-      ElMessage.error('连接已断开，请刷新页面重试')
-    }
-  }
-  ws.onerror = () => {
-    connected.value = false
-    clearSelection()
-  }
-}
-
 function handleWSMessage(msg: any): void {
   const t = msg.type
   const p = msg.payload
@@ -327,9 +262,7 @@ function handleWSMessage(msg: any): void {
       break
     }
     case 'ROOM_CLOSED':
-      roomClosedByServer = true
-      intentionalClose = true
-      stopAfk()
+      markServerClosed()
       forgetLastRoom()
       ElMessage.warning(p?.reason === '全员待机' ? '全员待机，房间已关闭' : '房主已解散房间')
       router.replace('/lobby')
@@ -493,80 +426,27 @@ function sendRematch(): void {
 
 /** 手动接管：在本页重连（会替换其他标签页的连接，对方收到通知后停止） */
 function resumeHere(): void {
-  const roomId = room.value?.roomId
-  if (!roomId || !myName.value) return
-  replacedNotice.value = false
-  retries = 0
-  connectWS(roomId, myName.value)
+  resume()
 }
 
 function leaveGame(): void {
   router.push('/lobby')
 }
 
-onMounted(async () => {
-  const roomId = route.params.roomId as string
-
-  if (!userStore.isLogin) {
-    router.replace('/login?redirect=' + encodeURIComponent('/game/' + roomId))
-    return
-  }
-
-  // 刷新后 store 仅水合了 token，需先补齐 userInfo 才能取到 userName
-  if (!userStore.userInfo) {
-    try {
-      await userStore.fetchProfile()
-    } catch {
-      // 下方统一按 userName 缺失处理
-    }
-  }
-  if (unmounted) return
-  const playerName = userStore.userInfo?.userName ?? ''
-  if (!playerName) {
-    ElMessage.error('用户信息未就绪，请重新登录')
-    router.replace('/lobby')
-    return
-  }
-  myName.value = playerName
-
-  let data: chessApi.RoomData
-  try {
-    data = await chessApi.getRoom(roomId, playerName)
-  } catch {
-    ElMessage.error('进入房间失败')
-    router.replace('/lobby')
-    return
-  }
-  if (!data.success) {
-    ElMessage.error(data.error ?? '进入房间失败')
-    router.replace('/lobby')
-    return
-  }
-  if (unmounted) return
-
-  applyRoomResponse(data)
-  pickerOpen.value = room.value?.status === 'WAITING' && !viewerColor.value
-
-  rememberLastRoom('xiangqi', roomId, playerName)
-  connectWS(roomId, playerName)
+/** 进房引导（登录校验 / profile 补齐 / getRoom / 记住房间 / 连 WS）由公共 composable 承担 */
+useRoomEntry({
+  gameKey: 'xiangqi',
+  loginRedirect: (id) => `/game/${id}`,
+  fetchRoom: (id, name) => chessApi.getRoom(id, name),
+  applyRoom: (data) => applyRoomResponse(data),
+  afterRoom: () => {
+    pickerOpen.value = room.value?.status === 'WAITING' && !viewerColor.value
+  },
+  playerName: myName,
+  connect,
 })
 
-onUnmounted(() => {
-  unmounted = true
-  intentionalClose = true
-  if (reconnectTimer !== null) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  if (ws) {
-    // 主动离开时避免触发断开提示与重连
-    ws.onclose = null
-    ws.onerror = null
-    ws.close()
-    ws = null
-  }
-  clearSelection()
-})
+onUnmounted(clearSelection)
 </script>
 
 <template>

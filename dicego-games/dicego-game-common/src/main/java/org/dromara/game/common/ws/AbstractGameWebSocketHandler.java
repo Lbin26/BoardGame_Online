@@ -17,8 +17,10 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -71,8 +73,25 @@ public abstract class AbstractGameWebSocketHandler<T extends GameRoom> extends T
         return roomManager.getRoom(roomId);
     }
 
-    /** 子类判断 playerName 是否为房主（用于解散权限校验） */
-    protected abstract boolean isHost(T room, String playerName);
+    /**
+     * 当前仍打开的连接对应的玩家名集合（按名字去重）。
+     * 平台级在线人数统计用：同一玩家多标签页、多房间、跨游戏多开都只算一人。
+     * 只统计 WS 连接，不把"已入座但断线"的玩家算在线。
+     */
+    public Set<String> connectedPlayerNames() {
+        Set<String> names = new HashSet<>();
+        for (WebSocketSession s : sessions.values()) {
+            if (!s.isOpen()) continue;
+            String name = (String) s.getAttributes().get("playerName");
+            if (name != null) names.add(name);
+        }
+        return names;
+    }
+
+    /** 房主判定：房主是房间级协作原语，所有游戏共用（解散权限校验） */
+    protected boolean isHost(T room, String playerName) {
+        return playerName != null && playerName.equals(room.getHostName());
+    }
 
     /** 子类连接自身同步载荷（含本人视角，如 viewerColor + 棋盘快照） */
     protected abstract Map<String, Object> selfSyncPayload(T room, String playerName);

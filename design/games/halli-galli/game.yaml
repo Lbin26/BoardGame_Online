@@ -1,0 +1,84 @@
+# 德国心脏病（Halli Galli）真实规则数据集
+# 数值单一事实来源：56 张 = 4 种水果 × 14 张，每张显示同种水果 1~5 个
+# 数据经中英文多源核对（详见 journal.md），牌型 key 稳定不变
+schemaVersion: 1
+meta:
+  key: halliGalli
+  name: 德国心脏病（Halli Galli）
+  players: { min: 2, max: 6 }
+  durationMin: 15
+  targetWeight: 1
+  zone: party
+mechanisms:
+  - reaction
+  - simultaneous-action
+components:
+  decks:
+    - key: fruit
+      name: 水果牌（56 张）
+      # 字段约定：count = 该牌型的张数；gain = 该牌面显示的同种水果个数
+      # 每种水果 14 张 = 1个×5 + 2个×3 + 3个×3 + 4个×2 + 5个×1
+      cards:
+        # ---- 苹果 apple（14 张） ----
+        - { key: apple-1, count: 5, gain: { apple: 1 } }
+        - { key: apple-2, count: 3, gain: { apple: 2 } }
+        - { key: apple-3, count: 3, gain: { apple: 3 } }
+        - { key: apple-4, count: 2, gain: { apple: 4 } }
+        - { key: apple-5, count: 1, gain: { apple: 5 } }
+        # ---- 樱桃 cherry（14 张） ----
+        - { key: cherry-1, count: 5, gain: { cherry: 1 } }
+        - { key: cherry-2, count: 3, gain: { cherry: 2 } }
+        - { key: cherry-3, count: 3, gain: { cherry: 3 } }
+        - { key: cherry-4, count: 2, gain: { cherry: 4 } }
+        - { key: cherry-5, count: 1, gain: { cherry: 5 } }
+        # ---- 柠檬 lemon（14 张） ----
+        - { key: lemon-1, count: 5, gain: { lemon: 1 } }
+        - { key: lemon-2, count: 3, gain: { lemon: 2 } }
+        - { key: lemon-3, count: 3, gain: { lemon: 3 } }
+        - { key: lemon-4, count: 2, gain: { lemon: 4 } }
+        - { key: lemon-5, count: 1, gain: { lemon: 5 } }
+        # ---- 葡萄 grape（14 张） ----
+        - { key: grape-1, count: 5, gain: { grape: 1 } }
+        - { key: grape-2, count: 3, gain: { grape: 2 } }
+        - { key: grape-3, count: 3, gain: { grape: 3 } }
+        - { key: grape-4, count: 2, gain: { grape: 4 } }
+        - { key: grape-5, count: 1, gain: { grape: 5 } }
+turnStructure:
+  phases:
+    - key: flip
+      name: 翻牌
+      summary: 轮到的玩家把自己背面牌堆的顶牌翻到自己面前，盖住上一张明牌；每位玩家永远只有一张明牌计入桌面。
+    - key: ring
+      name: 抢铃
+      summary: 无回合限制，任意时刻只要所有玩家明牌上某种水果的可见总数恰好为 5，任何人可拍铃，最快者得。
+    - key: resolve
+      name: 结算
+      summary: 抢对者收走桌面全部明牌并压到自己牌堆底，由其开始新一轮；抢错者从自己牌堆给每位仍在场的其他玩家各 1 张。
+    - key: eliminate
+      name: 淘汰
+      summary: 牌堆耗尽无法翻牌的玩家出局；其明牌留在桌面继续计数，直到被某次抢对收走。
+subsystems:
+  scoring:
+    endTrigger: 只剩 2 名玩家后进行最后一轮抢铃即结束（或一名玩家收走全部牌）；持牌总数最多者胜。
+    vpSources:
+      - key: cards
+        name: 持牌数
+        description: 终局清点每人手中与面前的全部卡牌，数量最多者获胜；游戏不计分。
+analysis:
+  whyFun: 规则只有一句话（恰好 5 个就拍铃），却把心算、扫视与手速压进同一秒。桌面每翻一张牌都会同时改变一种水果的计数，4→5 与 5→6 只差一张牌，制造持续的"该出手还是再等等"的紧张感；抢错要赔牌，又给冲动加了成本。人多时（5-6 人）信息量陡增，最适合聚会破冰。
+  remixable:
+    - 恰好等于阈值（而非 ≥）的抢答判定——可移植到任何实时反应玩法，天然制造"错过窗口"的遗憾。
+    - 顶牌覆盖机制——旧信息被新牌覆盖，迫使玩家持续增量心算而非静态清点。
+    - 抢错赔牌——把误判转化为资源损失，抑制无脑连点。
+    - 淘汰后明牌仍计数——出局玩家仍影响牌桌，避免边缘玩家被完全剥离。
+  pitfalls: 本档案 count 是牌型张数、gain 是牌面水果个数，与常规"一卡一 count"的档案语义不同，导出引擎/DB 时勿混用。抢铃是并发行为，线上必须由服务端仲裁先后，不能沿用回合制的"当前行动方"模型。牌堆耗尽后的抢铃权各版本有分歧（见 journal.md D4）。
+  sources:
+    - title: UltraBoardGames — Halli Galli Game Rules（56 张、恰好 5、罚则、终局）
+      url: https://www.ultraboardgames.com/halli-galli/game-rules.php
+    - title: kapiteinspel.nl — Halli Galli rules（2-6 人、恰好 5、6 不算、单卡 5 个也算）
+      url: https://kapiteinspel.nl/en/blog/halli-galli-spelregels
+    - title: kuakua.app — Halli Galli（每种水果 14 张与 5/3/3/2/1 数量分布）
+      url: https://kuakua.app/games/halli-galli
+    - title: WING 桌游 — 德国心脏病（草莓/香蕉/柠檬/李子各 14 张）
+      url: https://cn.wingboardgame.com/2021/07/halli-galli-wing.html
+  confidence: medium

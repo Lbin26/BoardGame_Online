@@ -24,19 +24,15 @@ class AbstractGameWebSocketHandlerTest {
 
     static class TestRoom extends GameRoom {
         private final java.util.Set<String> players = java.util.concurrent.ConcurrentHashMap.newKeySet();
-        TestRoom(String roomId) { super(roomId); }
+        TestRoom(String roomId, String hostName) { super(roomId, hostName); }
         void seat(String name) { players.add(name); }
         @Override
         protected java.util.Collection<String> participantNames() { return players; }
     }
 
-    /** 最小子类：加入载荷仅含 roomId，游戏消息不做任何事；creator 为房主 */
+    /** 最小子类：加入载荷仅含 roomId，游戏消息不做任何事；房主由 TestRoom 自身持有 */
     static class TestHandler extends AbstractGameWebSocketHandler<TestRoom> {
         TestHandler(GameRoomManager<TestRoom> manager) { super(manager); }
-        @Override
-        protected boolean isHost(TestRoom room, String playerName) {
-            return "creator".equals(playerName);
-        }
         @Override
         protected Map<String, Object> selfSyncPayload(TestRoom room, String playerName) {
             return Map.of("roomId", room.getRoomId());
@@ -57,7 +53,7 @@ class AbstractGameWebSocketHandlerTest {
 
     @BeforeEach
     void setUp() {
-        roomManager = new GameRoomManager<>(TestRoom::new);
+        roomManager = new GameRoomManager<>(id -> new TestRoom(id, "creator"));
         handler = new TestHandler(roomManager);
         room = roomManager.createRoom("creator");
     }

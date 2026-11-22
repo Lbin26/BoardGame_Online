@@ -26,7 +26,8 @@ DiceGo 是一个面向多人实时对战的**线上桌游平台**：登录后进
 | 房间系统 | 创建房间 / 房间号快捷加入 / 房间列表 5s 轮询；房间按等待/对局/结束状态分级自动清理 |
 | 实时对局 | WebSocket 长连接：走子、聊天、心跳；断线重连不误清在线状态，同名玩家跨房间不互踢 |
 | 🀄 中国象棋（已上线） | 完整走子规则引擎、将军判定、悔棋、认输、重新开局、红黑座位 |
-| 💎 宝石商人 Splendor（开发中） | `dicego-splendor` 模块骨架已就位，M1 已完成 9 张业务表设计（游戏/卡牌/贵族/房间/座位/比赛/行动日志等） |
+| 💎 宝石商人 Splendor（已上线） | 宝石/发展卡/贵族全流程，预留卡隐藏视角，支持 2–4 人 |
+| 🔔 德国心脏病 Halli Galli（已上线） | 2–6 人实时抢铃：服务端到达顺序仲裁、10s 超时代翻、抢错赔牌、两人残局特判；四果图标 + Web Audio 合成音效 |
 | 🎲 桌游设计工作台 | 前端 `/design` 页面 + `tools/boardgame-design` Node 工具包：`game.yaml` 结构化规则建模、平衡性模拟、规则书与植入要点导出 |
 
 ## 🧩 架构
@@ -39,7 +40,8 @@ graph LR
     subgraph Game["dicego-games 游戏模块群（可插拔）"]
         Common["dicego-game-common<br/>房间/WS/聊天公共层"]
         Common --> Xiangqi["dicego-xiangqi<br/>中国象棋"]
-        Common --> Splendor["dicego-splendor<br/>宝石商人(开发中)"]
+        Common --> Splendor["dicego-splendor<br/>宝石商人"]
+        Common --> HalliGalli["dicego-halligalli<br/>德国心脏病"]
     end
     Admin --> Common
     Tools["tools/boardgame-design<br/>规则建模/模拟工具包"] -.生成设计稿.-> Splendor
@@ -54,7 +56,8 @@ graph LR
 | `ruoyi-admin` | 后端启动入口（Jetty :8080），聚合所有模块 |
 | `dicego-games/dicego-game-common` | 游戏公共层：房间生命周期、WebSocket 基类、聊天、领域对象（RoomVO/GameMessage 等） |
 | `dicego-games/dicego-xiangqi` | 中国象棋：走子引擎、座位、悔棋/认输/重开 |
-| `dicego-games/dicego-splendor` | 宝石商人对战（骨架 + M1 数据库设计落地中） |
+| `dicego-games/dicego-splendor` | 宝石商人对战：卡牌/贵族缓存、回合引擎、个性化快照 |
+| `dicego-games/dicego-halligalli` | 德国心脏病：56 张牌引擎、并发抢铃仲裁、超时代翻、全量快照 |
 | `boardgame-ui` | 前端 SPA：登录注册、大厅三级导航、对局页、设计工作台 |
 | `tools/boardgame-design` | 桌游规则结构化建模（TypeScript schema）与模拟工具包 |
 | `design/` | 设计工作区：每款游戏 `game.yaml`/规则书/模拟报告；`samples/` 收录 7 款成熟桌游的结构化拆解 |
@@ -103,7 +106,8 @@ BoardGame_Online
 ├── dicego-games             # 游戏模块（每款桌游一个子模块）
 │   ├── dicego-game-common   # 游戏公共层：房间/WS/聊天
 │   ├── dicego-xiangqi       # 中国象棋（可玩）
-│   └── dicego-splendor      # 宝石商人（开发中）
+│   ├── dicego-splendor      # 宝石商人（可玩）
+│   └── dicego-halligalli    # 德国心脏病（可玩）
 ├── ruoyi-modules            # 框架基础模块（system/gen/workflow 等）
 ├── ruoyi-extend             # 可选扩展（监控、任务调度）
 ├── boardgame-ui             # Vue3 前端（Vite + TS + Vitest）
@@ -119,8 +123,12 @@ BoardGame_Online
 - [x] 游戏模块化拆分（game-common / xiangqi / dicego）
 - [x] 中国象棋多人实时对战
 - [x] 桌游设计工作台（建模 + 模拟 + 导出）
-- [ ] 宝石商人（Splendor）多人对战 —— M1 数据库设计已完成，开发中
-- [ ] 接入更多占位分区游戏（璀璨宝石 / 王权骰铸 / 阿瓦隆 / 伯明翰等已占位）
+- [x] 宝石商人（Splendor）多人对战
+- [x] 德国心脏病（Halli Galli）实时抢铃对战（2–6 人）
+- [x] 对局落库（game_match / game_match_player / game_action_log，全游戏共用）
+- [x] 个人中心"最近对局"战绩（全游戏共用 `/api/game/matches/recent`）
+- [x] 德国心脏病四果素材（苹果/柠檬/樱桃/葡萄）与合成音效
+- [ ] 接入更多占位分区游戏（王权骰铸 / 阿瓦隆 / 伯明翰等已占位）
 
 ## 🙏 致谢
 

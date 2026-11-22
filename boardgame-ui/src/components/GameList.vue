@@ -120,7 +120,7 @@ defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
   text-align: left;
   font: inherit;
   color: var(--ink);
-  background: rgba(32, 32, 58, 0.6);
+  background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px 20px;
@@ -221,7 +221,7 @@ button.game-entry {
   padding: 48px 20px;
   text-align: center;
   color: var(--muted);
-  background: rgba(32, 32, 58, 0.5);
+  background: var(--surface-4);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   display: flex;

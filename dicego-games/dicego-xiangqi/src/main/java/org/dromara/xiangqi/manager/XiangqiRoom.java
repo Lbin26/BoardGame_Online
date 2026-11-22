@@ -37,20 +37,15 @@ public class XiangqiRoom extends GameRoom {
     @Getter
     private volatile boolean blackConnected;
 
-    /** 房主（建房者），用于解散房间权限校验 */
-    @Getter
-    private final String hostName;
-
     public XiangqiRoom(String roomId) {
         this(roomId, null);
     }
 
     public XiangqiRoom(String roomId, String hostName) {
-        super(roomId);
+        super(roomId, hostName);
         this.engine = new XiangqiEngine();
         this.redPlayerName = null;
         this.blackPlayerName = null;
-        this.hostName = hostName;
     }
 
     /** 全员待机判定只看红黑双方入座玩家（旁观者不参与） */
@@ -191,7 +186,7 @@ public class XiangqiRoom extends GameRoom {
     public XiangqiRoomVO toVO(String viewerName) {
         PlayerColor viewerColor = getPlayerColor(viewerName);
         return new XiangqiRoomVO(getRoomId(), redPlayerName, blackPlayerName, status, viewerColor,
-            hostName, afkPlayers());
+            getHostName(), afkPlayers());
     }
 
     public boolean isInCheck() {
