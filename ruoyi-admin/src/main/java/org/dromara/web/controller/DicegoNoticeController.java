@@ -10,6 +10,7 @@ import org.dromara.common.core.enums.PushTypeEnum;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.api.MessageService;
 import org.dromara.system.api.domain.PushPayloadDTO;
+import org.dromara.system.api.model.LoginUser;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -69,11 +70,19 @@ public class DicegoNoticeController {
         return R.ok();
     }
 
-    /** 当前登录用户是否为超管（按 userName 白名单） */
+    /**
+     * 当前登录用户是否为超管。
+     * 与前端 constants/admin.ts 保持一致：userName / nickName 任一命中即可，
+     * 避免「前端显示发布入口、后端却拒绝发布」。
+     */
     private boolean isSuperAdmin() {
         try {
             String userName = LoginHelper.getUsername();
-            return userName != null && SUPER_ADMINS.contains(userName);
+            if (userName != null && SUPER_ADMINS.contains(userName)) {
+                return true;
+            }
+            LoginUser loginUser = LoginHelper.getLoginUser();
+            return loginUser != null && SUPER_ADMINS.contains(loginUser.getNickname());
         } catch (Exception e) {
             return false;
         }
