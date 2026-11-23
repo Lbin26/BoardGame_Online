@@ -56,7 +56,12 @@ else
   MVN="$SRC_DIR/mvnw"
   chmod +x "$MVN"
 fi
-(cd "$SRC_DIR" && "$MVN" -Pprod -DskipTests clean package)
+# CI-friendly 版本：从 pom.xml 读取 revision 显式传给 Maven，否则全新服务器上
+# dependencyManagement 里的 ${revision} BOM 无法解析（本地仓库尚无该版本）。
+REVISION=$(sed -n 's/.*<revision>\([^<]*\)<\/revision>.*/\1/p' "$SRC_DIR/pom.xml" | head -1)
+[ -n "$REVISION" ] || die "无法从 pom.xml 读取 revision 版本号"
+log "构建后端（版本 $REVISION）"
+(cd "$SRC_DIR" && "$MVN" -Drevision="$REVISION" -Pprod -DskipTests clean package)
 [ -f "$SRC_DIR/ruoyi-admin/target/ruoyi-admin.jar" ] || die "后端 jar 构建失败"
 
 log "构建前端"

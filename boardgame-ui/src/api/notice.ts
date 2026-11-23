@@ -1,7 +1,9 @@
 /**
- * 系统通知数据层：对接 RuoYi 原生消息盒子与桌游超管发布接口。
+ * DiceGo 平台通知数据层：借用 RuoYi 消息盒子传输，但只展示 DiceGo 自己的通知。
  *
- * - 玩家拉取：GET /resource/message/box（noticeList + systemList），全局广播对所有用户可见。
+ * - 玩家拉取：GET /resource/message/box（返回 noticeList / systemList / workflowList）。
+ * - 来源白名单：仅 DiceGo 超管公告（source=dicego）与版本更新（source=version）会被展示；
+ *   RuoYi 原生系统消息、通知公告、工作流消息一律隐藏——平台对用户只呈现 DiceGo 品牌。
  * - 超管发布：POST /api/dicego/notice/publish（服务端按超管名单校验）。
  * - 已读状态：后端 SysMessageVo 无 read 字段，前端用 localStorage 按 messageId 记录。
  */
@@ -31,12 +33,16 @@ export interface MessageBoxVo {
 /** 统一后的通知条目（消息中心消费） */
 export interface SystemNotice {
   id: string
-  kind: 'system' | 'notice'
+  /** version=版本更新，notice=平台公告；均为 DiceGo 平台消息 */
+  kind: 'version' | 'notice'
   title: string
   content: string
   createdAt: string
   read: boolean
 }
+
+/** DiceGo 平台通知的来源白名单；RuoYi 原生来源（backend / notice / workflow）一概不展示 */
+const DICEGO_SOURCES = new Set(['dicego', 'version'])
 
 /** 拉取当前用户消息盒子（需登录） */
 export function fetchMessageBox(): Promise<MessageBoxVo> {
@@ -83,12 +89,12 @@ export function markAllNoticesRead(ids: string[]): void {
   persistSet(set)
 }
 
-/** 把后端消息盒转换成通知列表（notice + system 合并，按时间倒序） */
+/** 把消息盒转换成 DiceGo 通知列表：仅平台来源，按时间倒序；RuoYi 原生消息全部隐藏 */
 export function toSystemNotices(box: MessageBoxVo): SystemNotice[] {
   const seen = readSet()
-  const map = (m: SysMessageVo, kind: 'system' | 'notice'): SystemNotice => {
+  const map = (m: SysMessageVo, kind: SystemNotice['kind']): SystemNotice => {
     const data = m.data ?? {}
-    const title = (typeof data.title === 'string' && data.title) || m.title || m.message || '系统通知'
+    const title = (typeof data.title === 'string' && data.title) || m.title || m.message || '平台通知'
     // content 优先取 data.content，其次后端解析出的 content，最后 message
     const content =
       (typeof data.content === 'string' && data.content) ||
@@ -105,9 +111,12 @@ export function toSystemNotices(box: MessageBoxVo): SystemNotice[] {
       read: seen.has(String(m.messageId)),
     }
   }
-  return [...box.noticeList.map((m) => map(m, 'notice')), ...box.systemList.map((m) => map(m, 'system'))].sort(
-    (a, b) => b.createdAt.localeCompare(a.createdAt),
-  )
+  // 两条来源都在 noticeList（后端按 type=notice 归类）；按 source 精确白名单过滤，
+  // 不消费 systemList / workflowList，彻底隐藏 RuoYi 原生消息。
+  return box.noticeList
+    .filter((m) => DICEGO_SOURCES.has(m.source))
+    .map((m) => map(m, m.source === 'version' ? 'version' : 'notice'))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 /** 超管发布系统通知 */

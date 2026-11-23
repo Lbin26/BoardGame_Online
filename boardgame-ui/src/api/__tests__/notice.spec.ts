@@ -9,12 +9,13 @@ import {
   type SysMessageVo,
 } from '@/api/notice'
 
+/** 默认模拟 DiceGo 平台公告；测试隐藏逻辑时显式改成 RuoYi 来源 */
 function msg(over: Partial<SysMessageVo>): SysMessageVo {
   return {
     messageId: 1,
     category: 'notice',
     type: 'notice',
-    source: 'notice',
+    source: 'dicego',
     title: '默认标题',
     message: '默认消息',
     content: null,
@@ -30,36 +31,52 @@ beforeEach(() => {
 })
 
 describe('toSystemNotices', () => {
-  it('从 data 提取 title/content，并按时间倒序合并 notice 与 system', () => {
+  it('只展示 DiceGo 来源的公告与版本通知，按时间倒序', () => {
     const box: MessageBoxVo = {
       noticeList: [
         msg({
           messageId: 10,
-          title: '兜底标题',
-          data: { title: '版本更新 v6.0.1', content: '修复若干问题' },
+          title: '公告兜底标题',
+          data: { title: '平台公告', content: '修复若干问题' },
           createTime: '2026-11-23T12:00:00',
         }),
-      ],
-      systemList: [
         msg({
-          messageId: 20,
-          category: 'system',
-          title: '系统消息标题',
-          message: '系统消息正文',
+          messageId: 30,
+          source: 'version',
+          title: 'DiceGo 版本更新 · v6.0.1',
+          data: { content: '体验优化' },
           createTime: '2026-11-23T14:00:00',
         }),
       ],
+      systemList: [],
       workflowList: [],
     }
 
     const notices = toSystemNotices(box)
     expect(notices).toHaveLength(2)
-    expect(notices[0].title).toBe('系统消息标题') // 14点在前
-    expect(notices[0].content).toBe('系统消息正文')
-    expect(notices[0].kind).toBe('system')
-    expect(notices[1].title).toBe('版本更新 v6.0.1')
+    expect(notices[0].title).toBe('DiceGo 版本更新 · v6.0.1')
+    expect(notices[0].kind).toBe('version')
+    expect(notices[1].title).toBe('平台公告')
     expect(notices[1].content).toBe('修复若干问题')
     expect(notices[1].kind).toBe('notice')
+  })
+
+  it('隐藏 RuoYi 原生系统消息、通知公告与工作流消息', () => {
+    const box: MessageBoxVo = {
+      // RuoYi 原生公告：source=notice（不在白名单）
+      noticeList: [
+        msg({ messageId: 1, source: 'notice', title: 'RuoYi 原生公告' }),
+        msg({ messageId: 2, source: 'workflow', title: '工作流消息' }),
+        msg({ messageId: 3, source: 'dicego', title: 'DiceGo 公告' }),
+      ],
+      // RuoYi 原生系统消息整组不消费
+      systemList: [msg({ messageId: 4, source: 'backend', category: 'system', title: 'RuoYi 系统消息' })],
+      workflowList: [msg({ messageId: 5, source: 'workflow', category: 'workflow', title: 'RuoYi 工作流' })],
+    }
+
+    const notices = toSystemNotices(box)
+    expect(notices).toHaveLength(1)
+    expect(notices[0].title).toBe('DiceGo 公告')
   })
 
   it('通知 content 优先 data.content → data.noticeContent → content → message', () => {

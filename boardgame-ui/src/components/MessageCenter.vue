@@ -25,7 +25,7 @@ const nickName = computed(() => userStore.userInfo?.nickName ?? '')
 const admin = computed(() => isSuperAdmin(userName.value, nickName.value))
 const isLogin = computed(() => userStore.isLogin)
 
-// 系统通知（RuoYi 原生消息盒子 + 版本更新自动通知）
+// DiceGo 平台通知（超管公告 + 版本更新自动通知；RuoYi 原生消息已在数据层隐藏）
 const {
   notices: systemNotices,
   unread: systemUnread,
@@ -209,7 +209,7 @@ function kindLabel(kind: InboxMessage['kind']): string {
       <!-- 通知 / 发送 -->
       <template v-if="tab === 'inbox'">
         <div class="mail-list">
-          <!-- 系统通知（后端消息盒子：公告 + 版本更新） -->
+          <!-- DiceGo 平台通知：超管公告 + 版本更新 -->
           <button
             v-for="notice in systemNotices"
             :key="'sys-' + notice.id"
@@ -219,7 +219,7 @@ function kindLabel(kind: InboxMessage['kind']): string {
             @click="openNotice(notice)"
           >
             <span class="mail-item-top">
-              <span class="mail-kind kind-system">系统</span>
+              <span class="mail-kind kind-system">DiceGo</span>
               <b>{{ notice.title }}</b>
               <time>{{ formatTime(notice.createdAt) }}</time>
             </span>
@@ -400,6 +400,26 @@ function kindLabel(kind: InboxMessage['kind']): string {
 .mail-list {
   max-height: 320px;
   overflow-y: auto;
+  /* 平滑跟随、触底回弹不穿透到页面；细滚动条随时间主题变色 */
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--scroll-thumb-hover);
+  }
 }
 .mail-item {
   display: flex;

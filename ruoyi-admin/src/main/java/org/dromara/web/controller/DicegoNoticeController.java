@@ -60,8 +60,9 @@ public class DicegoNoticeController {
             "content", content,
             "noticeContent", content
         );
+        // source 用 DiceGo 专属标识，前端消息中心据此区分平台通知与 RuoYi 原生公告
         PushPayloadDTO payload = PushPayloadDTO.of(
-            PushTypeEnum.NOTICE.getType(), "notice", title, data);
+            PushTypeEnum.NOTICE.getType(), "dicego", title, data);
         payload.setPath("");
         messageService.publishAll(payload);
         log.info("超管发布系统通知: title={}", title);

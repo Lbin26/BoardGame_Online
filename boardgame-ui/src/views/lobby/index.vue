@@ -55,9 +55,15 @@ const {
   onError: (error) => ElMessage.error(errMsg(error, '获取房间列表失败，请稍后重试')),
 })
 
-/** 平台在线人数：顶栏常显，30s 刷新一次（后端按玩家名去重，跨游戏合并） */
+/** 平台在线人数：顶栏常显，10s 刷新一次（后端按玩家名去重，跨游戏合并） */
+const ONLINE_REFRESH_MS = 10_000
 const onlineCount = ref<number | null>(null)
 let onlineTimer: number | null = null
+
+/** 页面切回前台时立即刷新一次，避免后台期间数字长期停留旧值 */
+function handleVisibility(): void {
+  if (document.visibilityState === 'visible') void refreshOnline()
+}
 
 /** 新上线游戏：后端 game_definition.create_time 决定，按前端 game key 索引（失败时降级为空，不阻断大厅） */
 const newGameKeys = ref<Set<string>>(new Set())
@@ -300,7 +306,8 @@ onMounted(async () => {
   void refreshOnline()
   void loadGameDefinitions()
   void loadRecent()
-  onlineTimer = window.setInterval(() => void refreshOnline(), 30_000)
+  onlineTimer = window.setInterval(() => void refreshOnline(), ONLINE_REFRESH_MS)
+  document.addEventListener('visibilitychange', handleVisibility)
   // 刷新后 store 仅水合了 token，需先补齐 userInfo；失败不阻断匿名列表
   if (userStore.isLogin && !userStore.userInfo) {
     try {
@@ -320,6 +327,7 @@ onUnmounted(() => {
     window.clearInterval(onlineTimer)
     onlineTimer = null
   }
+  document.removeEventListener('visibilitychange', handleVisibility)
 })
 </script>
 
@@ -330,7 +338,13 @@ onUnmounted(() => {
         <img class="lobby-logo theme-logo" :src="logoWordmark" alt="DiceGo" />
         <span class="online-badge" title="统计所有游戏中当前在线的玩家（同一账号只算一人）">
           <i class="online-dot" aria-hidden="true"></i>
-          在线 <b>{{ onlineCount ?? '—' }}</b> 人
+          在线
+          <span class="online-num" aria-live="polite">
+            <Transition name="online-roll" mode="out-in">
+              <b :key="onlineCount ?? 'loading'">{{ onlineCount ?? '—' }}</b>
+            </Transition>
+          </span>
+          人
         </span>
         <div class="lobby-top-actions">
           <MessageCenter />
@@ -677,15 +691,43 @@ onUnmounted(() => {
   background: var(--surface-2, rgba(255, 255, 255, 0.04));
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  b { color: var(--ink); font-weight: 700; }
+  .online-num {
+    display: inline-grid;
+    min-width: 1.6em;
+    justify-items: center;
+    overflow: hidden;
+    b { color: var(--ink); font-weight: 700; }
+  }
 }
 .online-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #4f9d69;
-  box-shadow: 0 0 0 3px rgba(79, 157, 105, 0.18);
   flex: none;
+  animation: online-breathe 2.4s ease-in-out infinite;
+}
+@keyframes online-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 157, 105, 0.42); }
+  50% { box-shadow: 0 0 0 5px rgba(79, 157, 105, 0); }
+}
+/* 数字变化时向上滚入，旧值淡出，避免生硬跳变 */
+.online-roll-enter-active,
+.online-roll-leave-active {
+  transition: transform 0.32s var(--ease), opacity 0.32s var(--ease);
+}
+.online-roll-enter-from {
+  transform: translateY(80%);
+  opacity: 0;
+}
+.online-roll-leave-to {
+  transform: translateY(-80%);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .online-dot { animation: none; }
+  .online-roll-enter-active,
+  .online-roll-leave-active { transition: none; }
 }
 .lobby-user-link {
   display: inline-flex;
