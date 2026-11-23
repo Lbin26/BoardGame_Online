@@ -30,12 +30,7 @@ java -version 2>&1 | head -1 | grep -q '21' || die "需要 JDK 21，当前：$(j
 echo "环境检查通过：$(java -version 2>&1 | head -1)"
 
 log "获取源码：$REPO ($BRANCH)"
-# 离线模式：服务器访问 GitHub 不稳定时，可先把源码包解压到 $SRC_DIR，
-# 再用 SKIP_FETCH=1 bash deploy.sh 直接构建，全程不走网络拉取。
-if [ "${SKIP_FETCH:-0}" = "1" ]; then
-  [ -f "$SRC_DIR/pom.xml" ] || die "离线模式：$SRC_DIR 中没有源码，请先上传并解压源码包"
-  echo "离线模式：跳过 git 拉取，直接使用 $SRC_DIR 现有代码"
-elif [ -d "$SRC_DIR/.git" ]; then
+if [ -d "$SRC_DIR/.git" ]; then
   git -C "$SRC_DIR" fetch origin "$BRANCH"
   git -C "$SRC_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
   # 部署目录是专用副本，直接对齐远端，避免本地残留文件影响构建
@@ -70,12 +65,7 @@ log "构建后端（版本 $REVISION）"
 [ -f "$SRC_DIR/ruoyi-admin/target/ruoyi-admin.jar" ] || die "后端 jar 构建失败"
 
 log "构建前端"
-if [ "${SKIP_FETCH:-0}" = "1" ] && [ -d "$SRC_DIR/boardgame-ui/node_modules" ]; then
-  # 离线场景复用服务器已装好的依赖，避免再访问 npm registry
-  (cd "$SRC_DIR/boardgame-ui" && npm run build)
-else
-  (cd "$SRC_DIR/boardgame-ui" && npm ci && npm run build)
-fi
+(cd "$SRC_DIR/boardgame-ui" && npm ci && npm run build)
 [ -f "$SRC_DIR/boardgame-ui/dist/index.html" ] || die "前端构建失败"
 
 log "安装产物"
