@@ -50,6 +50,12 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/incan-gold/:roomId',
+      name: 'incanGold',
+      component: () => import('@/views/incanGold/index.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/design',
       name: 'design',
       component: () => import('@/views/design/index.vue'),

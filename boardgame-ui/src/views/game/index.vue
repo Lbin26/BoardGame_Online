@@ -462,10 +462,10 @@ onUnmounted(clearSelection)
         🗑 解散房间
       </el-button>
       <el-button size="small" plain class="back-btn" @click="goBackOrLobby(router)">
-        ← 返回上一页
+        ⬅ 返回
       </el-button>
       <el-button size="small" plain class="back-btn" @click="leaveGame">
-        ← 返回大厅
+        ⬅ 回到大厅
       </el-button>
     </div>
 
@@ -540,7 +540,7 @@ onUnmounted(clearSelection)
           >
             🔄 再来一局
           </el-button>
-          <el-button @click="leaveGame">返回大厅</el-button>
+          <el-button @click="leaveGame">回到大厅</el-button>
         </div>
       </div>
 
@@ -597,7 +597,7 @@ onUnmounted(clearSelection)
           <el-button v-if="viewerColor" type="success" @click="sendRematch">
             🔄 再来一局
           </el-button>
-          <el-button @click="leaveGame">返回大厅</el-button>
+          <el-button @click="leaveGame">回到大厅</el-button>
         </div>
       </div>
     </div>

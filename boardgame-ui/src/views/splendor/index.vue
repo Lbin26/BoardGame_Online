@@ -491,8 +491,8 @@ useRoomEntry({
         <el-button size="small" plain @click="router.push('/rules/splendor')">📖 规则</el-button>
       </div>
       <div class="bar-right">
-        <el-button size="small" plain @click="goBackOrLobby(router)">← 返回上一页</el-button>
-        <el-button size="small" plain @click="leaveRoom">← 返回大厅</el-button>
+        <el-button size="small" plain @click="goBackOrLobby(router)">⬅ 返回</el-button>
+        <el-button size="small" plain @click="leaveRoom">⬅ 回到大厅</el-button>
         <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">
           🗑 解散
         </el-button>
@@ -868,7 +868,7 @@ useRoomEntry({
           </li>
         </ol>
         <div class="modal-actions">
-          <el-button type="primary" @click="leaveRoom">返回大厅</el-button>
+          <el-button type="primary" @click="leaveRoom">回到大厅</el-button>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import GameList from '@/components/GameList.vue'
-import { findZone, gamesInZone } from '@/constants/catalog'
+import { findZone, gamesInZone, GAMES } from '@/constants/catalog'
 
 const abstract = findZone('abstract')!
 describe('GameList', () => {
@@ -26,7 +26,7 @@ describe('GameList', () => {
     const w = mount(GameList, { props: { zone: findZone('card')!, games: gamesInZone('card') } })
     expect(w.findAll('.game-tag').map((t) => t.text())).toEqual(['引擎构建', '成套收集'])
     expect(w.find('.badge-playable').text()).toBe('可玩')
-    expect(w.text()).toContain('进入房间层 →')
+    expect(w.text()).toContain('进入房间大厅 ➜')
     expect(w.text()).not.toContain('敬请期待')
   })
   it('shows rules link only for games with a rule book and emits rules event', async () => {
@@ -36,6 +36,21 @@ describe('GameList', () => {
     await links[0].trigger('click')
     expect(w.emitted('rules')![0]).toEqual(['xiangqi'])
     expect(w.emitted('select')).toBeUndefined() // .stop 阻止触发整卡进入房间
+  })
+  it('applies renamed poster silhouettes only to games with a poster', () => {
+    const w = mount(GameList, { props: { zone: findZone('party')!, games: GAMES } })
+    const cards = w.findAll('.game-entry')
+    expect(cards).toHaveLength(GAMES.length)
+
+    const posters = cards.filter((c) => c.classes().includes('has-poster'))
+    expect(posters).toHaveLength(7)
+    const urls = posters.map((c) => c.attributes('style') ?? '')
+    for (const key of ['magicalAthlete', 'incanGold', 'splendor', 'diceThrone', 'halliGalli', 'avalon', 'brass']) {
+      expect(urls.some((u) => u.includes(`/posters/${key}.webp`))).toBe(true)
+    }
+    // 象棋等没有海报的游戏不铺背景
+    expect(cards[0].classes()).not.toContain('has-poster')
+    expect(cards[0].attributes('style')).not.toContain('--poster')
   })
   it('renders preparation empty state for zones without games', () => {
     const w = mount(GameList, { props: { zone: findZone('party')!, games: [] } })

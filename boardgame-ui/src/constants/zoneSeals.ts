@@ -6,5 +6,4 @@ export const ZONE_SEALS: Record<string, string> = {
   card: '牌',
   narrative: '叙',
   abstract: '弈',
-  heavy: '重',
 }

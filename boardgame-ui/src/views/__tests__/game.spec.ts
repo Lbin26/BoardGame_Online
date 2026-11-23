@@ -113,7 +113,7 @@ describe('room bar navigation', () => {
     const back = wrapper
       .find('.room-bar')
       .findAll('button')
-      .find((b) => b.text().includes('返回大厅'))
+      .find((b) => b.text().includes('回到大厅'))
     expect(back).toBeDefined()
     await back!.trigger('click')
     expect(mocks.push).toHaveBeenCalledWith('/lobby')
@@ -123,8 +123,8 @@ describe('room bar navigation', () => {
     const wrapper = mountGame()
     await flushPromises()
     const buttons = wrapper.find('.room-bar').findAll('button').map((b) => b.text().trim())
-    expect(buttons).toContain('← 返回上一页')
-    expect(buttons).toContain('← 返回大厅')
+    expect(buttons).toContain('⬅ 返回')
+    expect(buttons).toContain('⬅ 回到大厅')
   })
 })
 

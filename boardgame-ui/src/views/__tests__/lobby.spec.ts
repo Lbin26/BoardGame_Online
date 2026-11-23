@@ -41,9 +41,20 @@ const mocks = vi.hoisted(() => ({
     standUp: vi.fn(),
     getRoom: vi.fn(),
   },
+  incanGold: {
+    listRooms: vi.fn(async () => ({ rooms: [], waitingCount: 0, playingCount: 0 })),
+    createRoom: vi.fn(),
+    takeSeat: vi.fn(),
+    standUp: vi.fn(),
+    getRoom: vi.fn(async () => ({ success: false, error: '房间不存在' })),
+  },
   // 在线人数是装饰性信息：给默认成功实现，避免各 describe 挂载时产生未处理 rejection
   online: {
     getOnlineCount: vi.fn(async () => ({ success: true, onlineCount: 7 })),
+  },
+  // 战绩栏同样只做装饰展示，默认空列表
+  match: {
+    getRecentMatches: vi.fn(async () => ({ success: true, matches: [] as any[] })),
   },
 }))
 
@@ -56,7 +67,9 @@ vi.mock('@/api/xiangqi', () => mocks.api)
 vi.mock('@/api/splendor', () => mocks.splendor)
 vi.mock('@/api/halliGalli', () => mocks.hg)
 vi.mock('@/api/magicalAthlete', () => mocks.ma)
+vi.mock('@/api/incanGold', () => mocks.incanGold)
 vi.mock('@/api/online', () => mocks.online)
+vi.mock('@/api/match', () => mocks.match)
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)
@@ -266,7 +279,7 @@ describe('lobby levels', () => {
   it('level 0 shows zone grid and join-by-id, no create button', async () => {
     const w = mountLobby()
     await flushPromises()
-    expect(w.findAll('.zone-card')).toHaveLength(7)
+    expect(w.findAll('.zone-card')).toHaveLength(6)
     expect(buttonByText(w, '创建房间')).toBeUndefined()
     expect(w.find('input[placeholder="房间号(如 ABC123)"]').exists()).toBe(true)
   })
@@ -295,14 +308,14 @@ describe('lobby levels', () => {
   it('invalid query falls back to level 0', async () => {
     const w = mountLobby({ zone: 'nope', game: 'xiangqi' })
     await flushPromises()
-    expect(w.findAll('.zone-card')).toHaveLength(7)
+    expect(w.findAll('.zone-card')).toHaveLength(6)
   })
 
   it('back button at level 1 and 2 pushes bare /lobby', async () => {
     for (const q of [{ zone: 'abstract' }, L2]) {
       const w = mountLobby(q)
       await flushPromises()
-      await buttonByText(w, '← 返回大厅')!.trigger('click')
+      await buttonByText(w, '⬅ 回到大厅')!.trigger('click')
       expect(mocks.push).toHaveBeenCalledWith('/lobby')
       w.unmount()
     }
@@ -311,14 +324,14 @@ describe('lobby levels', () => {
   it('shows back-one-page button next to back-to-lobby in breadcrumb', async () => {
     const w = mountLobby(L2)
     await flushPromises()
-    expect(buttonByText(w, '← 返回上一页')).toBeDefined()
-    expect(buttonByText(w, '← 返回大厅')).toBeDefined()
+    expect(buttonByText(w, '⬅ 返回')).toBeDefined()
+    expect(buttonByText(w, '⬅ 回到大厅')).toBeDefined()
   })
 
   it('zone card click pushes zone query; game card click pushes zone+game', async () => {
     const w = mountLobby()
     await flushPromises()
-    await w.findAll('.zone-card')[5].trigger('click')
+    await w.findAll('.zone-card')[4].trigger('click')
     expect(mocks.push).toHaveBeenCalledWith({ path: '/lobby', query: { zone: 'abstract' } })
     const w2 = mountLobby({ zone: 'abstract' })
     await flushPromises()
@@ -539,5 +552,111 @@ describe('大厅在线人数', () => {
     expect(wrapper.find('.online-badge').text()).toContain('—')
     expect(errorSpy, '装饰性信息失败不应打断大厅').not.toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+})
+
+describe('大厅消息栏与玩家战绩栏', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.isLogin = true
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.api.listRooms.mockResolvedValue(emptyList)
+    mocks.online.getOnlineCount.mockResolvedValue({ success: true, onlineCount: 7 })
+    mocks.match.getRecentMatches.mockResolvedValue({ success: true, matches: [] })
+  })
+
+  it('首屏左侧是房间号表单，右侧展示上新/更新/热门消息', async () => {
+    const wrapper = mountLobby()
+    await flushPromises()
+
+    const guide = wrapper.find('.lobby-guide')
+    expect(guide.element.children[1].classList.contains('fastjoin')).toBe(true)
+    expect(guide.find('.guide-title').text()).toBe('选一款桌游开玩')
+    expect(guide.findAll('.guide-lede span').map((line) => line.text())).toEqual([
+      '有人等你？右侧输入房间号赴约',
+      '还没想好？点击分区参考看看',
+    ])
+    expect(guide.findAll('.hint span')).toHaveLength(2)
+
+    const news = wrapper.find('.news-panel')
+    expect(news.exists()).toBe(true)
+    const text = news.text()
+    expect(text).toContain('上新')
+    expect(text).toContain('更新')
+    expect(text).toContain('热门')
+    expect(news.findAll('.news-item')).toHaveLength(4)
+  })
+
+  it('战绩栏取最近 5 场，展示游戏名、人数、时长与胜负', async () => {
+    const base = {
+      playerCount: 4,
+      seatNo: 1,
+      rankNo: 1,
+      score: 10,
+      win: true,
+      status: '2',
+      startTime: '2026-11-23T10:00:00',
+      endTime: '2026-11-23T10:12:00',
+    }
+    mocks.match.getRecentMatches.mockResolvedValueOnce({
+      success: true,
+      matches: Array.from({ length: 5 }, (_, i) => ({
+        ...base,
+        matchNo: `M${i + 1}`,
+        gameCode: i === 0 ? 'magical_athlete' : 'xiangqi',
+      })),
+    })
+
+    const wrapper = mountLobby()
+    await flushPromises()
+
+    expect(mocks.match.getRecentMatches).toHaveBeenCalledWith(5)
+    const rows = wrapper.findAll('.record-panel .record-row')
+    expect(rows).toHaveLength(5)
+    expect(rows[0].text()).toContain('胡闹运动会 Magical Athlete')
+    expect(rows[0].text()).toContain('4 人')
+    expect(rows[0].text()).toContain('12 分')
+    expect(rows[0].text()).toContain('胜')
+    expect(wrapper.find('.record-head').text()).toContain('人数')
+    expect(wrapper.find('.record-head').text()).toContain('时长')
+    expect(wrapper.find('.record-head').text()).toContain('胜负')
+  })
+})
+
+describe('大厅房间层桌游介绍区', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.store.isLogin = true
+    mocks.store.userInfo = { userName: 'alice' }
+    mocks.api.listRooms.mockResolvedValue(emptyList)
+    mocks.online.getOnlineCount.mockResolvedValue({ success: true, onlineCount: 7 })
+    mocks.match.getRecentMatches.mockResolvedValue({ success: true, matches: [] })
+  })
+
+  it('房间层顶部展示海报、背景故事与规则入口', async () => {
+    const wrapper = mountLobby({ zone: 'card', game: 'splendor' })
+    await flushPromises()
+
+    const hero = wrapper.find('.game-hero')
+    expect(hero.exists()).toBe(true)
+    expect(hero.classes()).toContain('has-poster')
+    expect(hero.attributes('style')).toContain('/posters/splendor.webp')
+    expect(hero.find('.hero-name').text()).toBe('璀璨宝石 Splendor')
+    expect(hero.find('.hero-story').text()).toContain('宝石商人')
+
+    const rules = hero.findAll('button').find((b) => b.text().includes('查看规则'))
+    expect(rules).toBeDefined()
+    await rules!.trigger('click')
+    expect(mocks.push).toHaveBeenCalledWith('/rules/splendor')
+  })
+
+  it('没有海报的游戏仍展示故事但不铺海报背景', async () => {
+    const wrapper = mountLobby(L2)
+    await flushPromises()
+
+    const hero = wrapper.find('.game-hero')
+    expect(hero.exists()).toBe(true)
+    expect(hero.classes()).not.toContain('has-poster')
+    expect(hero.find('.hero-story').text()).toContain('楚河汉界')
   })
 })

@@ -8,6 +8,7 @@ import * as chessApi from '@/api/xiangqi'
 import * as splendorApi from '@/api/splendor'
 import * as halliGalliApi from '@/api/halliGalli'
 import * as magicalAthleteApi from '@/api/magicalAthlete'
+import * as incanGoldApi from '@/api/incanGold'
 import type { LastRoomGame } from '@/composables/useLastRoom'
 
 /** 归一化房间摘要：不同游戏的房间 VO 形状不同，统一到这里 */
@@ -205,11 +206,46 @@ const magicalAthleteAdapter: GameAdapter = {
   },
 }
 
+const incanGoldAdapter: GameAdapter = {
+  key: 'incanGold',
+  gameCode: 'incan_gold',
+  label: '印加宝藏 Diamant',
+  route: (roomId) => `/incan-gold/${roomId}`,
+  minPlayers: 3,
+  maxPlayers: 8,
+  capacities: [3, 4, 5, 6, 7, 8],
+  defaultCapacity: 4,
+  async listRooms() {
+    return incanGoldApi.listRooms()
+  },
+  async probeRoom(roomId, playerName) {
+    const data = await incanGoldApi.getRoom(roomId, playerName)
+    if (!data.success || !data.room) return { success: false, error: data.error }
+    const room = data.room
+    return {
+      success: true,
+      status: room.status,
+      hostName: room.hostName,
+      maxPlayers: room.maxPlayers,
+      seatedCount: room.seats?.filter((seat) => !!seat.name).length ?? 0,
+    }
+  },
+  async createRoom(playerName, capacity) {
+    const data = await incanGoldApi.createRoom(playerName, capacity)
+    return {
+      success: data.success && !!data.room,
+      roomId: data.room?.roomId,
+      error: data.error,
+    }
+  },
+}
+
 export const GAME_ADAPTERS: Record<LastRoomGame, GameAdapter> = {
   xiangqi: xiangqiAdapter,
   splendor: splendorAdapter,
   halliGalli: halliGalliAdapter,
   magicalAthlete: magicalAthleteAdapter,
+  incanGold: incanGoldAdapter,
 }
 
 /** 可在线对战的游戏（大厅房间层按此顺序探测房间号归属） */
@@ -218,6 +254,7 @@ export const PLAYABLE_ADAPTERS: GameAdapter[] = [
   splendorAdapter,
   halliGalliAdapter,
   magicalAthleteAdapter,
+  incanGoldAdapter,
 ]
 
 export function adapterOf(key: unknown): GameAdapter | undefined {

@@ -2,34 +2,37 @@ import { describe, expect, it } from 'vitest'
 import { ZONES, GAMES, gamesInZone, resolveLevel, findZone } from '@/constants/catalog'
 
 describe('catalog zones', () => {
-  it('has the 7 zones with verbatim names and mechanisms', () => {
-    expect(ZONES.map((z) => z.key)).toEqual(['party', 'family', 'strategy', 'card', 'narrative', 'abstract', 'heavy'])
-    expect(findZone('party')!.name).toBe('轻策/派对区')
-    expect(findZone('party')!.mechanisms).toEqual(['同时行动', '反应', '猜词', '吹牛', '轮抽轻量版'])
-    expect(findZone('family')!.mechanisms).toEqual(['成套收集', '板块放置', '骰子轻策', '交易谈判'])
-    expect(findZone('strategy')!.mechanisms).toEqual(['工人放置', '引擎构建', '区域控制', '路线构建', '行动点分配'])
-    expect(findZone('card')!.mechanisms).toEqual(['手牌管理', '牌库构建', '卡牌驱动', '轮抽', '多用途卡牌'])
-    expect(findZone('narrative')!.mechanisms).toEqual(['合作', '传承', '叙事', '隐藏身份', '战斗结算'])
-    expect(findZone('abstract')!.mechanisms).toEqual(['抽象棋', '模式构建', '逻辑推理'])
-    expect(findZone('heavy')!.mechanisms).toEqual(['资源管理+引擎+路线+推轨的复合体'])
+  it('has the 6 zones with verbatim names and mechanisms', () => {
+    expect(ZONES.map((z) => z.key)).toEqual(['party', 'family', 'card', 'narrative', 'abstract', 'strategy'])
+    expect(findZone('party')!.name).toBe('派对/聚会')
+    expect(findZone('party')!.mechanisms).toEqual(['秒反应', '同时出招', '笑到拍桌'])
+    expect(findZone('family')!.mechanisms).toEqual(['合家欢', '轻松上手', '攒套收集'])
+    expect(findZone('card')!.mechanisms).toEqual(['牌库构筑', '手牌博弈', '抽换轮转'])
+    expect(findZone('narrative')!.mechanisms).toEqual(['角色代入', '隐藏身份', '剧情抉择'])
+    expect(findZone('abstract')!.mechanisms).toEqual(['完全信息', '纯逻辑', '低随机'])
+    expect(findZone('strategy')!.mechanisms).toEqual(['长线布局', '资源运营', '多系统叠加'])
+    expect(findZone('heavy')).toBeUndefined()
   })
 })
 
 describe('catalog games', () => {
-  it('places the 3 placeholder games with verbatim mechanism tags and playable splendor', () => {
+  it('places games per the refreshed 6-zone table', () => {
     const by = (k: string) => GAMES.find((g) => g.key === k)!
     expect(by('splendor')).toMatchObject({ zone: 'card', playable: true, mechanisms: ['引擎构建', '成套收集'] })
     expect(by('diceThrone')).toMatchObject({ zone: 'narrative', playable: false, mechanisms: ['骰子驱动', '角色能力（不对称）', '卡牌辅助'] })
     expect(by('avalon')).toMatchObject({ zone: 'narrative', playable: false, mechanisms: ['隐藏身份', '推理/演绎', '投票'] })
-    expect(by('brass')).toMatchObject({ zone: 'heavy', playable: false, mechanisms: ['网络构建', '经济/资源管理', '手牌管理（轻卡驱）'] })
+    expect(by('brass')).toMatchObject({ zone: 'strategy', playable: false, mechanisms: ['网络构建', '经济/资源管理', '手牌管理（轻卡驱）'] })
     expect(by('xiangqi')).toMatchObject({ zone: 'abstract', playable: true })
     expect(by('go').playable).toBe(false)
     expect(by('gomoku').playable).toBe(false)
     expect(gamesInZone('abstract').map((g) => g.key)).toEqual(['xiangqi', 'go', 'gomoku'])
     expect(gamesInZone('card').map((g) => g.key)).toEqual(['splendor'])
-    expect(gamesInZone('party').map((g) => g.key)).toEqual(['halliGalli', 'magicalAthlete'])
+    expect(gamesInZone('party').map((g) => g.key)).toEqual(['halliGalli', 'magicalAthlete', 'incanGold'])
+    expect(gamesInZone('strategy').map((g) => g.key)).toEqual(['brass'])
+    expect(gamesInZone('family')).toEqual([])
     expect(by('halliGalli')).toMatchObject({ zone: 'party', playable: true, players: 6 })
     expect(by('magicalAthlete')).toMatchObject({ zone: 'party', playable: true, players: 6 })
+    expect(by('incanGold')).toMatchObject({ zone: 'party', playable: true, players: 8 })
   })
 })
 

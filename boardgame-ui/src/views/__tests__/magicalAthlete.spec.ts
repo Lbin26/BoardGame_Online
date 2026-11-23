@@ -357,3 +357,233 @@ describe('M5 3 人双角色变体前端适配', () => {
     })
   })
 })
+
+describe('比赛界面：左侧实时排名 / 四行 U 型赛道 / 往期灰显', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.roomData.room = room
+    mocks.onMessage = null
+  })
+
+  function raceSnapshot() {
+    const snap = draftSnapshot(0)
+    const p = snap.payload as any
+    p.phase = 'RACE'
+    p.raceNo = 1
+    p.currentSeatNo = 2
+    p.hands = {}
+    p.scores = { 1: 10, 2: 12, 3: 8 }
+    p.racers = [
+      { seatNo: 1, name: 'alexander', racerKey: 'hare', position: 12,
+        tripped: false, finishRank: 0, bronze: 1, ownerSeatNo: 1 },
+      { seatNo: 2, name: 'bob', racerKey: 'blimp', position: 20,
+        tripped: false, finishRank: 0, bronze: 0, ownerSeatNo: 2 },
+      { seatNo: 3, name: 'carol', racerKey: 'gunk', position: 20,
+        tripped: true, finishRank: 0, bronze: 0, ownerSeatNo: 3 },
+    ]
+    return snap
+  }
+
+  it('RACE：左侧按位置实时排序并显示总分，悬停显示当前选手技能', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    mocks.onMessage!(raceSnapshot())
+    await flushPromises()
+
+    const rows = w.findAll('.rank-panel .rank-row')
+    expect(rows.length).toBe(3)
+    expect(rows[0].text()).toContain('bob')
+    expect(rows[0].text()).toContain('12')
+    expect(rows[1].text()).toContain('carol')
+    expect(rows[2].text()).toContain('alice')
+    expect(w.find('.piece').text()).toBe('alexa') // 棋子名字只取前 5 个字
+
+    const popover = rows[0].find('.card-popover')
+    expect(popover.text()).toContain('飞艇')
+    expect(popover.text()).toContain('回合起点在第二角前主移动+3')
+  })
+
+  it('RACE：四行 S 型连通赛道，掷骰在下方且中间无领先信息', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    mocks.onMessage!(raceSnapshot())
+    await flushPromises()
+
+    const rows = w.findAll('.track-row')
+    expect(rows.length).toBe(4)
+    expect(rows.map((r) => (r.classes().includes('right') ? 'right' : 'left')))
+      .toEqual(['right', 'left', 'right', 'left'])
+
+    const r0 = rows[0].findAll('.track-cell')
+    const r1 = rows[1].findAll('.track-cell')
+    const r2 = rows[2].findAll('.track-cell')
+    const r3 = rows[3].findAll('.track-cell')
+    expect([r0.length, r1.length, r2.length, r3.length]).toEqual([8, 8, 8, 7])
+    // 行末与下一行入口竖直对齐：7/8、15/16、23/24
+    expect([r0[0].text(), r0[7].text(), r1[0].text(), r1[7].text()])
+      .toEqual([expect.stringContaining('0'), expect.stringContaining('7'),
+        expect.stringContaining('15'), expect.stringContaining('8')])
+    expect([r2[0].text(), r2[7].text(), r3[0].text(), r3[6].text()])
+      .toEqual([expect.stringContaining('16'), expect.stringContaining('23'),
+        expect.stringContaining('30'), expect.stringContaining('24')])
+    // 连接箭头与行末转向标记
+    expect(r0[0].find('.cell-link').exists()).toBe(true)
+    expect(r0[7].find('.cell-turn').text()).toBe('↓')
+    expect(r3[0].find('.cell-turn').text()).toBe('🏁')
+
+    // 末行 7 格右移一列：30 落在第 2 列，24 落在第 8 列正对 23 下方
+    expect(r3[0].attributes('style')).toContain('grid-column-start: 2')
+    expect(r3[6].attributes('style')).toBeUndefined()
+
+    // 中间不再有领先信息，下方不显示分数，掷骰与图鉴同处操作层
+    expect(w.find('.track-gap').exists()).toBe(false)
+    expect(w.find('.gap-leader').exists()).toBe(false)
+    expect(w.find('.score-strip').exists()).toBe(false)
+    expect(w.find('.race-ops button.primary').text()).toContain('掷骰')
+    expect(w.find('.race-ops .catalog-trigger').text()).toContain('图鉴')
+
+    expect(w.find('.catalog-overlay').exists()).toBe(false)
+    await w.find('.catalog-trigger').trigger('click')
+    expect(w.find('.catalog-overlay').exists()).toBe(true)
+    expect(w.findAll('.catalog-overlay .catalog-card').length).toBe(36)
+    await w.find('.catalog-close').trigger('click')
+    expect(w.find('.catalog-overlay').exists()).toBe(false)
+  })
+
+  it('RACE：格子按四段分区着色，狂野面特殊格与拐弯格另有样式', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    const snap = raceSnapshot()
+    ;(snap.payload as any).raceNo = 2 // 狂野面才有特殊格
+    mocks.onMessage!(snap)
+    await flushPromises()
+
+    const cells = w.findAll('.track-cell')
+    const cellOf = (n: number) => cells.find((c) => c.find('.cell-no').text() === String(n))!
+    expect(cellOf(0).classes()).toEqual(expect.arrayContaining(['zone-a', 'start']))
+    expect(cellOf(7).classes()).toContain('corner')
+    expect(cellOf(15).classes()).toEqual(expect.arrayContaining(['zone-b', 'corner']))
+    expect(cellOf(16).classes()).toContain('zone-c')
+    expect(cellOf(30).classes()).toEqual(expect.arrayContaining(['zone-d', 'finish']))
+    // 狂野面 1/5/16/23 等特殊格单独描边
+    expect(cellOf(1).classes()).toContain('special')
+    expect(cellOf(16).classes()).toContain('special')
+    expect(cellOf(2).classes()).not.toContain('special')
+  })
+
+  it('RACE：掷骰播报把 ABILITY 效果码翻成中文触发技能', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    mocks.onMessage!(raceSnapshot())
+    await flushPromises()
+
+    mocks.onMessage!({
+      type: 'DICE_RESULT',
+      payload: {
+        seatNo: 1,
+        value: 4,
+        tripSkipped: false,
+        auto: false,
+        effects: ['MAIN_MOVE:12->16', 'ABILITY:banana@seat1:trip@seat2', 'ABILITY:blimp@seat1:+3'],
+      },
+    })
+    await flushPromises()
+
+    const toast = w.find('.dice-toast')
+    expect(toast.exists()).toBe(true)
+    expect(toast.text()).toContain('触发技能')
+    expect(toast.text()).toContain('香蕉 · 绊倒目标')
+    expect(toast.text()).toContain('飞艇 · 前进 3 格')
+    expect(toast.text()).not.toContain('banana@seat')
+    expect(toast.text()).not.toContain('ABILITY:')
+  })
+
+  it('RACE：可选能力按当前出场选手说明，而非通用技能列表', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    const snap = raceSnapshot()
+    const p = snap.payload as any
+    p.myOptionalOptions = ['USE_PRIMARY']
+    p.currentLane = 2
+    p.activeRacerKeysByLane = { '2': 'legs' }
+    mocks.onMessage!(snap)
+    await flushPromises()
+
+    const panel = w.find('.optional-panel')
+    expect(panel.exists()).toBe(true)
+    expect(panel.find('.optional-title').text()).toContain('大长腿')
+    expect(panel.find('.optional-copy b').text()).toBe('启用能力')
+    expect(panel.find('.optional-copy small').text()).toContain('当前出场「大长腿」')
+    expect(panel.find('.optional-copy small').text()).toContain('不声明则本回合按普通掷骰结算')
+    expect(panel.find('.optional-copy small').text()).not.toContain('火箭科学家')
+  })
+
+  it('RACE：右侧聊天与行动日志可收发中文记录', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    mocks.onMessage!(raceSnapshot())
+    await flushPromises()
+
+    expect(w.find('.race-side .chat-panel').exists()).toBe(true)
+    expect(w.find('.race-side .log-panel').exists()).toBe(true)
+
+    mocks.onMessage!({ type: 'CHAT', playerName: 'carol', payload: { text: '大家好' } })
+    mocks.onMessage!({
+      type: 'DICE_RESULT',
+      payload: {
+        seatNo: 1, playerName: 'alice', value: 3, tripSkipped: false,
+        effects: ['ABILITY:banana@seat1:trip@seat2'],
+      },
+    })
+    await flushPromises()
+
+    expect(w.find('.race-side .chat-messages').text()).toContain('carol')
+    expect(w.find('.race-side .chat-messages').text()).toContain('大家好')
+    const log = w.find('.race-side .log-messages').text()
+    expect(log).toContain('alice')
+    expect(log).toContain('掷出 3')
+    expect(log).toContain('香蕉 · 绊倒目标')
+
+    await w.find('.chat-input input').setValue('轮到我啦')
+    await w.find('.chat-send').trigger('click')
+    expect(mocks.send).toHaveBeenCalledWith({ type: 'CHAT', payload: { text: '轮到我啦' } })
+  })
+
+  it('RACE_RESULT：单场结算播报会自动消失', async () => {
+    vi.useFakeTimers()
+    try {
+      const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+      await flushPromises()
+      mocks.onMessage!({
+        type: 'RACE_RESULT',
+        payload: { raceNo: 1, goldName: 'bob', silverName: 'alice', goldValue: 2, silverValue: 1 },
+      })
+      await flushPromises()
+      expect(w.find('.result-toast').exists()).toBe(true)
+
+      vi.advanceTimersByTime(3600)
+      await flushPromises()
+      expect(w.find('.result-toast').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('MUSTER：usedRacerKeys 中的往期选手灰显且不可点', async () => {
+    const w = mount(MagicalAthlete, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    const snap = draftSnapshot(0)
+    const p = snap.payload as any
+    p.phase = 'MUSTER'
+    p.raceNo = 2
+    p.hands = { 2: ['hare', 'gunk', 'blimp'] }
+    p.usedRacerKeys = ['hare']
+    mocks.onMessage!(snap)
+    await flushPromises()
+
+    const cards = w.findAll('.racer-card')
+    expect(cards[0].classes()).toContain('used')
+    expect(cards[0].attributes('disabled')).toBeDefined()
+    expect(cards[1].attributes('disabled')).toBeUndefined()
+  })
+})

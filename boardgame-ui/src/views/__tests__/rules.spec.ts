@@ -24,7 +24,7 @@ describe('rules page', () => {
     const w = mountRules('splendor')
     await flushPromises()
     const texts = w.findAll('button').map((b) => b.text().trim())
-    expect(texts).toContain('← 返回')
+    expect(texts).toContain('⬅ 返回')
     expect(texts.join(' ')).not.toContain('返回大厅')
   })
 
@@ -36,10 +36,19 @@ describe('rules page', () => {
     expect(w.findAll('.rule-section').length).toBeGreaterThanOrEqual(3)
   })
 
+  it('胡闹运动会规则页追加选手图鉴，展示全部角色技能', async () => {
+    const w = mountRules('magicalAthlete')
+    await flushPromises()
+    expect(w.text()).toContain('选手图鉴')
+    expect(w.find('#catalog').exists()).toBe(true)
+    expect(w.findAll('#catalog .catalog-card').length).toBe(36)
+    expect(w.find('#catalog').text()).toContain('主骰1/2可把移动基数替换为4')
+  })
+
   it('未知游戏显示兜底且按钮同为「返回」', async () => {
     const w = mountRules('unknown')
     await flushPromises()
     expect(w.text()).toContain('暂无')
-    expect(w.findAll('button').map((b) => b.text().trim())).toEqual(['← 返回', '返回'])
+    expect(w.findAll('button').map((b) => b.text().trim())).toEqual(['⬅ 返回', '返回'])
   })
 })

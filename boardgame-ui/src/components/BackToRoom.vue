@@ -70,7 +70,7 @@ function dismiss(): void {
         <span class="btr-title">回到房间 {{ entry.roomId }}</span>
         <span class="btr-sub">{{ gameName }} · {{ count }}<template v-if="label"> · {{ label }}</template></span>
       </span>
-      <span class="btr-go">→</span>
+      <span class="btr-go">➜</span>
     </button>
     <button type="button" class="btr-close" title="不再显示" @click="dismiss">×</button>
   </div>
@@ -80,7 +80,8 @@ function dismiss(): void {
 .back-to-room {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* 底部为大厅「发送意见」悬浮按钮留出位置 */
+  bottom: 84px;
   z-index: 50;
   display: flex;
   align-items: stretch;

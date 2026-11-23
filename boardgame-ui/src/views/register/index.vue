@@ -5,7 +5,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 
 import { CLIENT_ID, getCaptcha, register } from '@/api/auth'
 import type { RegisterBody } from '@/api/auth'
-import logoWordmark from '@/assets/logo-wordmark.png'
+import logoWordmark from '@/assets/logo-dicego-transparent.png'
 
 const router = useRouter()
 

@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import type { Game, Zone } from '@/constants/catalog'
+import { POSTER_GAME_KEYS } from '@/constants/catalog'
 import { ZONE_SEALS } from '@/constants/zoneSeals'
 import { findRuleBook } from '@/constants/rules'
 
 defineProps<{ zone: Zone; games: Game[] }>()
 defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
+
+/** 海报剪影：文件名直接用 game.key，未登记的游戏不铺背景 */
+function entryStyle(game: Game, i: number): Record<string, string | number> {
+  return POSTER_GAME_KEYS.has(game.key)
+    ? { '--i': i + 1, '--poster': `url('/posters/${game.key}.webp')` }
+    : { '--i': i + 1 }
+}
 </script>
 
 <template>
@@ -26,8 +34,8 @@ defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
         :key="game.key"
         :type="game.playable ? 'button' : undefined"
         class="game-entry rise"
-        :class="{ 'is-disabled': !game.playable }"
-        :style="{ '--i': i + 1 }"
+        :class="{ 'is-disabled': !game.playable, 'has-poster': POSTER_GAME_KEYS.has(game.key) }"
+        :style="entryStyle(game, i)"
         @click="game.playable && $emit('select', game.key)"
       >
         <span class="g-name">{{ game.name }}</span>
@@ -47,7 +55,7 @@ defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
           >
             📖 规则
           </span>
-          <span v-if="game.playable" class="go">进入房间层 →</span>
+          <span v-if="game.playable" class="go">进入房间大厅 ➜</span>
         </span>
         <span v-if="game.mechanisms" class="entry-tags">
           <span v-for="m in game.mechanisms" :key="m" class="game-tag">{{ m }}</span>
@@ -113,6 +121,8 @@ defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
   padding-bottom: clamp(48px, 6vw, 80px);
 }
 .game-entry {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -125,6 +135,53 @@ defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
   border-radius: var(--radius);
   padding: 18px 20px;
   transition: border-color 0.25s var(--ease);
+
+  /* 彩色海报剪影：贴左侧铺开，双层遮罩让右侧彻底渐隐到卡片底色 */
+  &.has-poster::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--poster);
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: auto 155%;
+    filter: saturate(1.15) brightness(0.78) contrast(1.05);
+    opacity: 0.62;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.5) 38%, transparent 70%);
+    mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.5) 38%, transparent 70%);
+    pointer-events: none;
+    transition: opacity 0.25s var(--ease);
+  }
+  &.has-poster::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 12%, var(--surface-1) 72%);
+    pointer-events: none;
+  }
+  &.has-poster > * {
+    position: relative;
+    z-index: 1;
+  }
+  /* 海报剪影上的小标签改为实底白字：半透明描边在深色背景上会糊掉 */
+  &.has-poster .game-tag,
+  &.has-poster .badge-soon,
+  &.has-poster .rules-link {
+    color: #fff;
+    background: rgba(16, 22, 34, 0.82);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+  &.has-poster .badge-playable {
+    color: #fff;
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+  &.has-poster:hover:not(.is-disabled)::before {
+    opacity: 0.72;
+  }
+  &.has-poster.is-disabled::before {
+    opacity: 0.22;
+  }
 
   &:hover:not(.is-disabled) {
     border-color: var(--accent-hover);

@@ -10,7 +10,7 @@ package org.dromara.magicalathlete.engine.ability;
  * {@code ON_ABILITY_FIRED} 由效果管线在任一能力实际发动后自动补发，供蹭蹭怪类能力监听。
  */
 public enum AbilityEvent {
-    /** 赛前准备（西西弗斯 +4、倒霉蛋垫底判定等） */
+    /** 赛前准备（西西弗斯 +4、蛋蛋/双胞胎复制赛前能力等） */
     BEFORE_RACE,
     /** 替换主移动基数（炼金术士 1/2→4、大长腿→5、火箭翻倍） */
     ROLL_REPLACE,

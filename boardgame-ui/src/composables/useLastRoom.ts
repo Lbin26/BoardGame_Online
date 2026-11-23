@@ -1,6 +1,6 @@
 /** 记住玩家"上次所在房间"，供大厅右下角一键返回（意外离开/刷新/直接跳大厅时保留） */
 
-export type LastRoomGame = 'splendor' | 'xiangqi' | 'halliGalli' | 'magicalAthlete'
+export type LastRoomGame = 'splendor' | 'xiangqi' | 'halliGalli' | 'magicalAthlete' | 'incanGold'
 
 export interface LastRoomEntry {
   roomId: string
@@ -13,7 +13,9 @@ export interface LastRoomEntry {
 const STORAGE_KEY = 'dicego:lastRoom'
 
 function isGameKey(v: unknown): v is LastRoomGame {
-  return v === 'splendor' || v === 'xiangqi' || v === 'halliGalli' || v === 'magicalAthlete'
+  return (
+    v === 'splendor' || v === 'xiangqi' || v === 'halliGalli' || v === 'magicalAthlete' || v === 'incanGold'
+  )
 }
 
 /** 读取记录；JSON 损坏 / 字段缺失 / 账号不匹配一律视为无记录 */

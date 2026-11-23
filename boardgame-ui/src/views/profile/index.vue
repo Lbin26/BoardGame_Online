@@ -191,7 +191,7 @@ async function handleSubmit(): Promise<void> {
         <div class="profile-head">
           <h2 class="profile-title">个人资料</h2>
           <button type="button" class="btn btn-ghost btn-sm" @click="router.push('/lobby')">
-            ← 返回大厅
+            ⬅ 回到大厅
           </button>
         </div>
       </template>

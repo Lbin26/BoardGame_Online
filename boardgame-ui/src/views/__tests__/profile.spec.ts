@@ -63,7 +63,7 @@ describe('profile page', () => {
     await flushPromises()
     expect((w.find('input[placeholder="请输入昵称"]').element as HTMLInputElement).value).toBe('小爱')
     expect((w.find('input:disabled').element as HTMLInputElement).value).toBe('alice')
-    expect(w.text()).toContain('卡牌区')
+    expect(w.text()).toContain('卡牌构筑')
     const checked = w.findAll('input[type="checkbox"]')
       .filter((cb) => (cb.element as HTMLInputElement).checked)
       .map((cb) => (cb.element as HTMLInputElement).value)

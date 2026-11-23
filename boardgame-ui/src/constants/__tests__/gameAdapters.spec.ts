@@ -20,7 +20,7 @@ describe('game adapters registry', () => {
   })
 
   it('四款可玩桌游都注册了路由与容量范围', () => {
-    expect(PLAYABLE_ADAPTERS.map((a) => a.key)).toEqual(['xiangqi', 'splendor', 'halliGalli', 'magicalAthlete'])
+    expect(PLAYABLE_ADAPTERS.map((a) => a.key)).toEqual(['xiangqi', 'splendor', 'halliGalli', 'magicalAthlete', 'incanGold'])
     expect(adapterOf('halliGalli')!.route('ABC123')).toBe('/halli-galli/ABC123')
     expect(adapterOf('magicalAthlete')!.route('ABC123')).toBe('/magical-athlete/ABC123')
     expect(adapterOf('splendor')!.capacities).toEqual([2, 3, 4])

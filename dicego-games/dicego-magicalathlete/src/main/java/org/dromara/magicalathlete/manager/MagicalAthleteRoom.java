@@ -747,7 +747,7 @@ public class MagicalAthleteRoom extends GameRoom {
             ready, activePublic, myKey, racerVOs,
             lastDice, diceSeatNo, lastEffects, goldSeat, silverSeat, scores, rankings, myOptions,
             variant.name(), variant.racersPerSeat(), currentLane,
-            laneToSeatMap, activeByLane, myKeys, musterProgress);
+            laneToSeatMap, activeByLane, myKeys, musterProgress, List.copyOf(usedRacers));
     }
 
     private MagicalAthleteSnapshotVO emptySnapshot(List<MagicalAthleteSnapshotVO.PlayerVO> players) {
@@ -756,7 +756,7 @@ public class MagicalAthleteRoom extends GameRoom {
             List.of(), Map.of(), null, List.of(), null, null, List.of(),
             null, null, Map.of(), List.of(), List.of(),
             variant.name(), variant.racersPerSeat(), null,
-            Map.of(), Map.of(), List.of(), Map.of());
+            Map.of(), Map.of(), List.of(), Map.of(), List.copyOf(usedRacers));
     }
 
     public String nameOfSeat(int seatNo) {

@@ -56,3 +56,7 @@ application-ga.yml
 
 # Local verification scratch: tokens, captchas, screenshots, one-off scripts
 /logs/
+
+# Runtime uploads (avatars etc.)
+/dicego-data/
+

@@ -156,6 +156,15 @@ class ExtendedAbilitiesTest {
     void lovableLoserScoresWhenSoleTrailer() {
         AbilityContext c = ctx(List.of(st(1, "lovable_loser", 2), st(2, "hare", 20), st(3, "gunk", 18)), 3, 1);
         fire(c, AbilityEvent.DICE_RESULT, 1);
-        assertEquals(1, c.seat(1).score, "独自垫底 +1");
+        assertEquals(1, c.seat(1).score, "自己回合独自垫底 +1");
+    }
+
+    @Test
+    void lovableLoserDoesNotScoreOnOthersTurn() {
+        // 倒霉蛋座位1虽独自垫底，但本回合是座位2掷骰 → 能力不发动，避免每轮重复触发
+        AbilityContext c = ctx(List.of(st(1, "lovable_loser", 2), st(2, "hare", 20), st(3, "gunk", 18)), 3, 2);
+        EffectPipeline.ChainResult result = fire(c, AbilityEvent.DICE_RESULT, 2);
+        assertTrue(result.empty(), "别人回合不应产出倒霉蛋得分");
+        assertEquals(0, c.seat(1).score, "倒霉蛋只在自己回合结算");
     }
 }

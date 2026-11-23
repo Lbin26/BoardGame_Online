@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { findRuleBook } from '@/constants/rules'
 import { findGame } from '@/constants/catalog'
+import RacerCatalog from '@/components/RacerCatalog.vue'
+import { RACERS } from '@/constants/racers'
 import { goBackOrLobby } from '@/utils/navigation'
 
 const route = useRoute()
@@ -15,12 +17,14 @@ const game = computed(() => findGame(gameKey.value))
 const heading = computed(
   () => ruleBook.value?.title ?? game.value?.name ?? '规则介绍',
 )
+/** 胡闹运动会：规则末尾追加选手图鉴 */
+const showCatalog = computed(() => gameKey.value === 'magicalAthlete')
 </script>
 
 <template>
   <div class="rules-page">
     <header class="rules-head">
-      <button type="button" class="back-btn" @click="goBackOrLobby(router)">← 返回</button>
+      <button type="button" class="back-btn" @click="goBackOrLobby(router)">⬅ 返回</button>
       <div class="head-text">
         <h1>{{ heading }}</h1>
         <p v-if="ruleBook" class="subtitle">{{ ruleBook.subtitle }}</p>
@@ -38,6 +42,9 @@ const heading = computed(
         >
           {{ i + 1 }}. {{ section.title }}
         </a>
+        <a v-if="showCatalog" href="#catalog" class="toc-link">
+          {{ ruleBook!.sections.length + 1 }}. 选手图鉴
+        </a>
       </nav>
 
       <main class="sections">
@@ -52,6 +59,12 @@ const heading = computed(
           <ul v-if="section.bullets" class="bullets">
             <li v-for="(item, j) in section.bullets" :key="j">{{ item }}</li>
           </ul>
+        </section>
+
+        <section v-if="showCatalog" id="catalog" class="rule-section">
+          <h2><span class="sec-no">图</span>选手图鉴</h2>
+          <p class="para">共 {{ Object.keys(RACERS).length }} 名选手，可按能力类型筛选查看。</p>
+          <RacerCatalog />
         </section>
       </main>
     </div>

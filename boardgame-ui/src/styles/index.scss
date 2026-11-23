@@ -113,3 +113,15 @@ body {
     Arial,
     sans-serif;
 }
+
+/* 文字符号圆润加粗：界面箭头统一用粗圆字形（➜ / ⬅），并提升字重与稍增字号，
+   避免默认字形过细。使用独立 span / 伪元素承载，不影响正文排版。 */
+.zone-arrow,
+.btr-go,
+.design-entry-arrow,
+.go,
+.go::after {
+  font-weight: 800;
+  font-size: 1.15em;
+  line-height: 1;
+}

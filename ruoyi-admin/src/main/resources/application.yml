@@ -116,6 +116,9 @@ security:
     - /ws/splendor
     - /ws/splendor/**
     - /api/splendor/**
+    # 印加宝藏 WebSocket（REST 仍走 Bearer token）
+    - /ws/incan-gold
+    - /ws/incan-gold/**
     # 平台在线人数（只读统计，允许未登录查看）
     - /api/online
 

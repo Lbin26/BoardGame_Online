@@ -97,6 +97,8 @@ export interface MagicalAthleteSnapshot {
   activeRacerKeysByLane?: Record<string, string>
   myActiveRacerKeys?: string[]
   musterProgress?: Record<string, number>
+  /** 过往场次已出场过的选手 key（公开字段，用于手牌灰显） */
+  usedRacerKeys?: string[]
 }
 
 /** 选手展示信息（由 racerKey 映射，M1 前端内置 catalog） */

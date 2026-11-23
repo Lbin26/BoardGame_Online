@@ -132,6 +132,13 @@
             <version>${revision}</version>
         </dependency>
 
+        <!--  桌游对战模块：印加宝藏（Diamant）  -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>dicego-incangold</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>

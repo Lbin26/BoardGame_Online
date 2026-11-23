@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import * as api from '@/api/magicalAthlete'
-import type { MagicalAthleteRoomInfo, MagicalAthleteSnapshot } from '@/api/magicalAthlete'
+import type {
+  MagicalAthleteRoomInfo,
+  MagicalAthleteRacerState,
+  MagicalAthleteSnapshot,
+} from '@/api/magicalAthlete'
+import RacerCatalog from '@/components/RacerCatalog.vue'
+import { useChat, type ChatMessage } from '@/composables/useChat'
 import { useGameWebSocket } from '@/composables/useGameWebSocket'
 import { useRoomEntry } from '@/composables/useRoomEntry'
 import { racerHue, racerInfo, racerName, typeLabel } from '@/constants/racers'
@@ -18,6 +24,8 @@ const room = ref<MagicalAthleteRoomInfo | null>(null)
 const snapshot = ref<MagicalAthleteSnapshot | null>(null)
 const myName = ref('')
 const clock = ref(Date.now())
+/** 比赛页图鉴弹层（与掷骰同处下方操作层） */
+const catalogOpen = ref(false)
 
 /** 最近一次选人播报（手动可关，自动消失兜底） */
 const lastPick = ref<{
@@ -59,6 +67,23 @@ function dismissRaceResult(): void {
   lastRaceResult.value = null
 }
 
+/** 播报统一自动消失，组件卸载时清掉残留定时器 */
+const toastTimers = new Set<number>()
+const RESULT_TOAST_HOLD_MS = 3600
+
+function autoDismiss(clear: () => void, ms: number): void {
+  const id = window.setTimeout(() => {
+    toastTimers.delete(id)
+    clear()
+  }, ms)
+  toastTimers.add(id)
+}
+
+function clearToastTimers(): void {
+  for (const id of toastTimers) window.clearTimeout(id)
+  toastTimers.clear()
+}
+
 /** 采用服务端房间信息但保住本人座位（中立广播 mySeatNo=null 时按名字反查） */
 function adoptRoom(next: MagicalAthleteRoomInfo | null | undefined): void {
   if (!next) return
@@ -76,7 +101,7 @@ function syncMySeatFromSnapshot(): void {
   if (mine) room.value = { ...room.value, mySeatNo: mine }
 }
 
-function handleMessage(msg: { type?: string; payload?: Record<string, any> }): void {
+function handleMessage(msg: { type?: string; playerName?: string; payload?: Record<string, any> }): void {
   const type = msg?.type
   const payload = msg?.payload ?? {}
   switch (type) {
@@ -96,13 +121,19 @@ function handleMessage(msg: { type?: string; payload?: Record<string, any> }): v
       if (payload) snapshot.value = payload as unknown as MagicalAthleteSnapshot
       syncMySeatFromSnapshot()
       break
-    case 'MUSTER_READY':
-      ElMessage.info(`${(payload.playerName as string) ?? '有玩家'} 已准备出场选手`)
+    case 'MUSTER_READY': {
+      const who = (payload.playerName as string) ?? '有玩家'
+      ElMessage.info(`${who} 已准备出场选手`)
+      appendLog(who, '已准备出场选手')
       break
-    case 'RACE_START':
+    }
+    case 'RACE_START': {
+      const raceNo = payload.raceNo ?? snapshot.value?.raceNo ?? '?'
       lastDiceMsg.value = null
-      ElMessage.success(`第 ${payload.raceNo ?? snapshot.value?.raceNo ?? '?'} 场开始，出场选手已公开`)
+      ElMessage.success(`第 ${raceNo} 场开始，出场选手已公开`)
+      appendLog('system', `第 ${raceNo} 场开始，出场选手已公开`)
       break
+    }
     case 'DICE_RESULT': {
       lastDiceMsg.value = {
         seatNo: payload.seatNo as number,
@@ -111,10 +142,17 @@ function handleMessage(msg: { type?: string; payload?: Record<string, any> }): v
         auto: !!payload.auto,
         effects: (payload.effects as string[]) ?? [],
       }
-      window.setTimeout(() => {
+      autoDismiss(() => {
         const cur = lastDiceMsg.value
         if (cur && cur.seatNo === payload.seatNo && cur.value === payload.value) lastDiceMsg.value = null
       }, DICE_TOAST_HOLD_MS)
+      {
+        const who = (payload.playerName as string) || nameOfSeat(payload.seatNo as number)
+        const skills = ((payload.effects as string[]) ?? [])
+          .filter((e) => e.startsWith('ABILITY:') && !e.startsWith('ABILITY:CHAIN_LIMIT:'))
+          .map((e) => abilityEffectText(e.slice('ABILITY:'.length)))
+        appendLog(who, `掷出 ${payload.value}${skills.length ? `，触发 ${skills.join('、')}` : ''}`)
+      }
       break
     }
     case 'RACE_RESULT':
@@ -125,10 +163,18 @@ function handleMessage(msg: { type?: string; payload?: Record<string, any> }): v
         goldValue: payload.goldValue as number,
         silverValue: payload.silverValue as number,
       }
+      autoDismiss(() => { lastRaceResult.value = null }, RESULT_TOAST_HOLD_MS)
+      {
+        const rr = lastRaceResult.value
+        appendLog('system', `第 ${payload.raceNo} 场结束：🥇${rr?.goldName} +${rr?.goldValue}　🥈${rr?.silverName} +${rr?.silverValue}`)
+      }
       break
-    case 'GAME_OVER':
-      ElMessage.success(payload.tie ? '比赛结束：并列第一！' : '比赛结束，查看最终排名')
+    case 'GAME_OVER': {
+      const text = payload.tie ? '对局结束：并列第一' : '对局结束，查看最终排名'
+      ElMessage.success(text)
+      appendLog('system', text)
       break
+    }
     case 'DRAFT_PICK': {
       lastPick.value = {
         seatNo: payload.seatNo as number,
@@ -136,14 +182,18 @@ function handleMessage(msg: { type?: string; payload?: Record<string, any> }): v
         racerKey: (payload.racerKey as string) ?? '',
         auto: !!payload.auto,
       }
-      window.setTimeout(() => {
+      autoDismiss(() => {
         const current = lastPick.value
         if (current && current.racerKey === payload.racerKey && current.seatNo === payload.seatNo) {
           lastPick.value = null
         }
       }, PICK_TOAST_HOLD_MS)
+      appendLog((payload.playerName as string) ?? '玩家', `选走了 ${racerName((payload.racerKey as string) ?? '')}`)
       break
     }
+    case 'CHAT':
+      addChatMsg((msg.playerName as string) ?? '', (payload.text as string) ?? '')
+      break
     case 'ACTION_REJECT':
       ElMessage.warning((payload.message as string) ?? '操作被拒绝')
       break
@@ -173,6 +223,31 @@ useRoomEntry({
   playerName: myName,
   connect,
 })
+
+/* ---- 比赛页右侧：聊天 + 行动日志 ---- */
+const chatBox = ref<HTMLElement | null>(null)
+const logBox = ref<HTMLElement | null>(null)
+const actionLogs = ref<ChatMessage[]>([])
+
+/** 按快照玩家顺序给名字稳定配色，聊天与日志共用 */
+function nameColorClass(who: string): string {
+  const idx = (snapshot.value?.players ?? []).findIndex((p) => p.name === who)
+  return `pc-${idx >= 0 ? idx % 8 : 0}`
+}
+
+const { chatMessages, chatText, addChatMsg, sendChat } = useChat({
+  send: (text) => { send({ type: 'CHAT', payload: { text } }) },
+  classifyWho: (who) => (who === 'system' ? 'system' : nameColorClass(who)),
+  scrollTarget: chatBox,
+})
+
+function appendLog(who: string, text: string): void {
+  actionLogs.value.push({ who, text, whoClass: who === 'system' ? 'system' : nameColorClass(who) })
+  nextTick(() => {
+    const el = logBox.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
 
 const roomId = computed(() => (route.params.roomId as string) ?? room.value?.roomId ?? '')
 const status = computed(() => room.value?.status ?? 'WAITING')
@@ -277,17 +352,41 @@ const isMyRoll = computed(
   () => phase.value === 'RACE' && currentSeat.value !== null && currentSeat.value === mySeat.value,
 )
 
-/** M4：本回合可用的可选能力项（仅轮到我时服务端下发） */
+/** M4：本回合可用的可选能力项（仅轮到我时服务端下发，服务端已按当前 lane 的选手生成） */
 const myOptionalOptions = computed(() => snapshot.value?.myOptionalOptions ?? [])
 const hasOptionalChoice = computed(() => isMyRoll.value && myOptionalOptions.value.length > 0)
+
+/**
+ * 当前轮到我行动的出场选手（双角色局按 currentLane 精确取；普通局 lane==seat）。
+ * 用于把「启用能力」「指定目标」这类通用选项，解释成当前这张卡具体做什么。
+ */
+const myActingRacer = computed(() => {
+  const lane = snapshot.value?.currentLane ?? mySeat.value
+  const key = snapshot.value?.activeRacerKeysByLane?.[String(lane)]
+    ?? snapshot.value?.activeRacerKeys?.[String(lane)]
+  return key ? racerInfo(key) : null
+})
 /** 可选能力的目标输入（座位 / 格 / 猜骰），按选项类型显示 */
 const optionalTarget = ref<number>(0)
 const optionalUsed = ref(false)
-const OPTION_LABELS: Record<string, string> = {
-  USE_PRIMARY: '启用能力',
-  TARGET_SEAT: '指定目标座位',
-  TARGET_SPACE: '指定目标格',
-  GUESS_DICE: '猜骰点(1-6)',
+/** 选项短标签 + 该类选项怎么填；具体能力文案由当前出场选手的 abilitySummary 提供 */
+const OPTION_INFO: Record<string, { label: string; guide: string }> = {
+  USE_PRIMARY: {
+    label: '启用能力',
+    guide: '点「使用」发动该能力；不声明则本回合按普通掷骰结算。',
+  },
+  TARGET_SEAT: {
+    label: '指定目标选手',
+    guide: '先选一名未冲线的其他选手，再点「使用」；选自己或目标已冲线则能力不发动。',
+  },
+  TARGET_SPACE: {
+    label: '指定目标格',
+    guide: '先填 1–30 的赛道格，再点「使用」；不满足人数等条件时能力不发动，不额外消耗回合。',
+  },
+  GUESS_DICE: {
+    label: '猜骰点 (1–6)',
+    guide: '先填 1–6 的预测点数，再点「使用」；猜错本回合照常结算，超时未声明视为放弃。',
+  },
 }
 
 /**
@@ -305,8 +404,58 @@ const optionalTargetOptions = computed(() =>
 function optionalLabel(opt: string): string {
   return isDoubleVariant.value && opt === 'TARGET_SEAT'
     ? '指定目标选手'
-    : (OPTION_LABELS[opt] ?? opt)
+    : (OPTION_INFO[opt]?.label ?? opt)
 }
+
+function optionalDetail(opt: string): string {
+  const racer = myActingRacer.value
+  const head = racer
+    ? `当前出场「${racer.name}」：${racer.abilitySummary || '见选手图鉴'}。`
+    : '当前出场选手能力待公开。'
+  return `${head}${OPTION_INFO[opt]?.guide ?? ''}`
+}
+
+/**
+ * 把引擎的 ABILITY 效果码（如 banana@seat2:trip@seat1）翻成中文播报。
+ * 效果码来自后端 Effect.reason()，格式固定为 <racerKey>@seat<N>:<detail>；
+ * 未在 RACERS 中的 key 原样显示，避免后端新增选手时前端白屏。
+ */
+function abilityEffectText(reason: string): string {
+  const at = reason.indexOf('@')
+  const key = at >= 0 ? reason.slice(0, at) : reason
+  const detail = at >= 0 ? (reason.slice(reason.indexOf(':', at) + 1) || '') : ''
+  const name = racerInfo(key).name || key
+  const colon = detail.indexOf(':')
+  const head = colon >= 0 ? detail.slice(0, colon) : detail
+  let effect = ''
+  if (head.startsWith('trip@')) effect = '绊倒目标'
+  else if (head.startsWith('warp@')) effect = '传送目标'
+  else if (head.startsWith('warp->')) effect = `传送至 ${detail.slice(6)} 格`
+  else if (head.startsWith('swap@')) effect = '交换位置'
+  else if (head === 'cancel-main' || head === 'follow-cancel') effect = '取消主要移动'
+  else if (head.startsWith('follow@')) effect = '跟随目标'
+  else if (head.startsWith('cancel@')) effect = '取消目标移动'
+  else if (head.startsWith('base=')) effect = `主骰改为 ${(detail.split('->')[1] ?? '').split('@')[0]}`
+  else if (head === 'solo-lead-skip') effect = '独自领先·跳过移动'
+  else if (/^[+-]\d+$/.test(head)) effect = head.startsWith('+') ? `前进 ${head.slice(1)} 格` : `后退 ${head.slice(1)} 格`
+  else if (/^pre\+\d+$/.test(head)) effect = `赛前 +${head.slice(4)} 分`
+  else if (/^\+\d+@/.test(head)) effect = `+${head.slice(1).split('@')[0]} 分`
+  return effect ? `${name} · ${effect}` : `${name} · ${racerInfo(key).abilitySummary || '能力发动'}`
+}
+
+/** 本次掷骰实际触发的技能链（去重、过滤链上限系统项） */
+const triggeredAbilities = computed(() => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of lastDiceMsg.value?.effects ?? []) {
+    if (!raw.startsWith('ABILITY:') || raw.startsWith('ABILITY:CHAIN_LIMIT:')) continue
+    const text = abilityEffectText(raw.slice('ABILITY:'.length))
+    if (seen.has(text)) continue
+    seen.add(text)
+    out.push(text)
+  }
+  return out
+})
 
 /** 双角色局：当前行动 lane 对应的出场选手名（普通局恒为空，不影响原提示） */
 const currentLaneRacerName = computed(() => {
@@ -336,6 +485,70 @@ function useOptional(option: string): void {
 /** RACE：赛道上的棋子（含狂野面特殊格标记） */
 const racers = computed(() => snapshot.value?.racers ?? [])
 
+/** 名字最多显示 max 个字；Array.from 避免 emoji/代理对被截成半个字符 */
+function shortName(name: string | null | undefined, max = 5): string {
+  return Array.from(name ?? '').slice(0, max).join('')
+}
+
+/** 往期已出场选手（公开字段），用于暗选手牌灰显 */
+const usedRacerKeys = computed<Set<string>>(() => new Set(snapshot.value?.usedRacerKeys ?? []))
+
+function isUsedRacer(key: string): boolean {
+  return usedRacerKeys.value.has(key)
+}
+
+interface PlayerStanding {
+  seatNo: number
+  name: string
+  order: number
+  total: number
+  bronze: number
+  racers: MagicalAthleteRacerState[]
+}
+
+/** RACE 实时名次：finishRank 优先，未冲线按位置倒序；双角色按真实座位分组取最好一名 */
+const playerStandings = computed<PlayerStanding[]>(() => {
+  const snap = snapshot.value
+  if (!snap) return []
+  const bySeat = new Map<number, MagicalAthleteRacerState[]>()
+  for (const r of snap.racers ?? []) {
+    const seat = Number(r.ownerSeatNo ?? r.seatNo)
+    const list = bySeat.get(seat) ?? []
+    list.push(r)
+    bySeat.set(seat, list)
+  }
+  const rankOf = (r: MagicalAthleteRacerState): number =>
+    r.finishRank > 0 ? r.finishRank : 1000 - r.position
+  const rows = (snap.players ?? []).map((p) => {
+    const seat = Number(p.seatNo)
+    const list = (bySeat.get(seat) ?? [])
+      .slice()
+      .sort((a, b) => rankOf(a) - rankOf(b) || a.seatNo - b.seatNo)
+    return {
+      seatNo: seat,
+      name: p.name,
+      total: Number(snap.scores?.[String(seat)] ?? 0),
+      bronze: list.reduce((sum, r) => sum + (r.bronze || 0), 0),
+      racers: list,
+      best: list[0] as MagicalAthleteRacerState | undefined,
+    }
+  })
+  rows.sort((a, b) => {
+    if (!a.best && !b.best) return a.seatNo - b.seatNo
+    if (!a.best) return 1
+    if (!b.best) return -1
+    return rankOf(a.best) - rankOf(b.best) || a.seatNo - b.seatNo
+  })
+  return rows.map((row, i) => ({
+    seatNo: row.seatNo,
+    name: row.name,
+    order: i + 1,
+    total: row.total,
+    bronze: row.bronze,
+    racers: row.racers,
+  }))
+})
+
 const WILD_SPECIALS: Record<number, { icon: string; label: string }> = {
   1: { icon: '🪙', label: '+1 铜币' },
   5: { icon: '💤', label: '绊倒' },
@@ -350,14 +563,41 @@ const WILD_SPECIALS: Record<number, { icon: string; label: string }> = {
 }
 
 const isWildTrack = computed(() => (snapshot.value?.raceNo ?? 0) % 2 === 0)
-const trackCells = computed(() => Array.from({ length: 31 }, (_, i) => i))
+interface TrackRow {
+  cells: number[]        // 左到右渲染的格号
+  dir: 'right' | 'left'  // 该行行进方向
+  turn: string           // 出口格上的转向/终点标记
+  offset?: number        // 起始列（0 基），末行 7 格右移一列才能对齐上一行
+}
+
+/** 四行严格 S 型：0→7、8→15、16→23、24→30，相邻行首尾竖直对齐，格子依次相连 */
+const trackRows = computed<TrackRow[]>(() => [
+  { cells: Array.from({ length: 8 }, (_, i) => i),      dir: 'right', turn: '↓' },  // 0..7
+  { cells: Array.from({ length: 8 }, (_, i) => 15 - i), dir: 'left',  turn: '↓' },  // 8..15
+  { cells: Array.from({ length: 8 }, (_, i) => 16 + i), dir: 'right', turn: '↓' },  // 16..23
+  { cells: Array.from({ length: 7 }, (_, i) => 30 - i), dir: 'left',  turn: '🏁', offset: 1 }, // 24..30
+])
+
+function isTrackExit(row: TrackRow, ci: number): boolean {
+  return row.dir === 'right' ? ci === row.cells.length - 1 : ci === 0
+}
 
 function specialAt(cell: number) {
   return isWildTrack.value ? WILD_SPECIALS[cell] : undefined
 }
 
+/** 赛道四段配色：0-7 / 8-15 / 16-23 / 24-30 各一套底色，避免整条赛道一片白 */
+function cellZone(cell: number): string {
+  if (cell < 8) return 'zone-a'
+  if (cell < 16) return 'zone-b'
+  if (cell < 24) return 'zone-c'
+  return 'zone-d'
+}
+
 function racersAt(cell: number) {
-  return racers.value.filter((r) => r.position === cell)
+  return racers.value
+    .filter((r) => r.position === cell)
+    .sort((a, b) => a.seatNo - b.seatNo)
 }
 
 function startGame(): void {
@@ -426,6 +666,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   if (ticker) window.clearInterval(ticker)
+  clearToastTimers()
 })
 
 function cardStyle(key: string): Record<string, string> {
@@ -450,8 +691,8 @@ function cardStyle(key: string): Record<string, string> {
         <el-button size="small" plain @click="router.push('/rules/magicalAthlete')">📖 规则</el-button>
       </div>
       <div class="bar-right">
-        <el-button size="small" plain @click="goBackOrLobby(router)">← 返回上一页</el-button>
-        <el-button size="small" plain @click="backToLobby">← 返回大厅</el-button>
+        <el-button size="small" plain @click="goBackOrLobby(router)">⬅ 返回</el-button>
+        <el-button size="small" plain @click="backToLobby">⬅ 回到大厅</el-button>
         <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">🗑 解散</el-button>
       </div>
     </header>
@@ -616,9 +857,13 @@ function cardStyle(key: string): Record<string, string> {
             :key="key"
             type="button"
             class="racer-card"
-            :class="{ pickable: !myActiveKeys.includes(key), locked: myActiveKeys.includes(key) }"
+            :class="{
+              pickable: !myActiveKeys.includes(key) && !isUsedRacer(key),
+              locked: myActiveKeys.includes(key),
+              used: isUsedRacer(key),
+            }"
             :style="cardStyle(key)"
-            :disabled="myActiveKeys.includes(key)"
+            :disabled="myActiveKeys.includes(key) || isUsedRacer(key)"
             @click="readyRacer(key)"
           >
             <span class="racer-badge" :style="{ background: `hsl(${racerHue(key)}, 55%, 45%)` }">
@@ -632,73 +877,183 @@ function cardStyle(key: string): Record<string, string> {
       </div>
     </section>
 
-    <!-- 比赛：横向赛道 + 棋子 + 掷骰 -->
+    <!-- 比赛：左侧实时排名 + 左到右再左回的 U 型赛道 + 中间掷骰/领先 -->
     <section v-else-if="phase === 'RACE' || phase === 'RACE_END'" class="race-view">
-      <div class="draft-head">
-        <h2>第 {{ snapshot?.raceNo }} 场 · {{ isWildTrack ? '狂野面' : '平缓面' }}</h2>
-        <p class="hint">
-          <template v-if="isMyRoll"><strong class="mine">轮到你掷骰！</strong></template>
-          <template v-else>等待 <strong>{{ nameOfSeat(snapshot?.currentSeatNo) }}</strong> 掷骰</template>
-          <span v-if="currentLaneRacerName" class="lane-hint">· 当前出场：{{ currentLaneRacerName }}</span>
-        </p>
-        <span class="countdown" :class="{ urgent: secondsLeft <= 5 }">⏱ {{ secondsLeft }}s</span>
-      </div>
+      <div class="race-layout">
+        <aside class="rank-panel">
+          <div class="rank-title">
+            <h3>实时排名</h3>
+            <span>第 {{ snapshot?.raceNo }} 场</span>
+          </div>
+          <div class="rank-list">
+            <div
+              v-for="s in playerStandings"
+              :key="s.seatNo"
+              class="rank-row"
+              :class="{ mine: s.seatNo === mySeat, acting: s.seatNo === currentSeat }"
+              tabindex="0"
+            >
+              <span class="rank-no">{{ s.order }}</span>
+              <div class="rank-player">
+                <span class="rank-name">
+                  {{ shortName(s.name, 5) }}<small v-if="s.seatNo === mySeat">（我）</small>
+                </span>
+                <span class="rank-score"><b>{{ s.total }}</b> 分 · 🪙{{ s.bronze }} 分</span>
+                <div class="card-popover">
+                  <template v-if="s.racers.length">
+                    <div
+                      v-for="r in s.racers"
+                      :key="r.seatNo"
+                      class="pop-card"
+                      :style="cardStyle(r.racerKey)"
+                    >
+                      <div class="pop-head">
+                        <b>{{ shortName(racerName(r.racerKey), 5) }}</b>
+                        <span>{{ typeLabel(racerInfo(r.racerKey).abilityType) }}</span>
+                      </div>
+                      <p class="pop-skill">{{ racerInfo(r.racerKey).abilitySummary }}</p>
+                      <div class="pop-state">
+                        第 {{ r.position }} 格<template v-if="r.tripped"> · 绊倒</template><template v-if="r.finishRank > 0"> · 已冲线</template>
+                      </div>
+                    </div>
+                  </template>
+                  <p v-else class="pop-empty">本场选手尚未公开</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="rank-tip">悬停 / 聚焦玩家名可查看出场选手与技能</p>
+        </aside>
 
-      <div class="track" :class="{ wild: isWildTrack }">
-        <div v-for="cell in trackCells" :key="cell" class="track-cell" :class="{ finish: cell === 30, start: cell === 0 }">
-          <span class="cell-no">{{ cell }}</span>
-          <span v-if="specialAt(cell)" class="cell-special" :title="specialAt(cell)?.label">
-            {{ specialAt(cell)?.icon }}
-          </span>
-          <div class="piece-row">
-            <span
-              v-for="r in racersAt(cell)"
-              :key="r.seatNo"
-              class="piece"
-              :class="{ mine: (r.ownerSeatNo ?? r.seatNo) === mySeat, tripped: r.tripped, finished: r.finishRank > 0 }"
-              :style="{ background: `hsl(${racerHue(r.racerKey)}, 55%, 45%)` }"
-              :title="`${r.name} · ${racerName(r.racerKey)}${r.tripped ? ' · 绊倒' : ''}`"
-            >{{ r.name.slice(0, 1) }}</span>
+        <div class="race-main">
+          <div class="draft-head">
+            <h2>第 {{ snapshot?.raceNo }} 场 · {{ isWildTrack ? '狂野面' : '平缓面' }}</h2>
+            <p class="hint">
+              <template v-if="isMyRoll"><strong class="mine">轮到你掷骰！</strong></template>
+              <template v-else>等待 <strong>{{ nameOfSeat(snapshot?.currentSeatNo) }}</strong> 掷骰</template>
+              <span v-if="currentLaneRacerName" class="lane-hint">· 当前出场：{{ currentLaneRacerName }}</span>
+            </p>
+            <span class="countdown" :class="{ urgent: secondsLeft <= 5 }">⏱ {{ secondsLeft }}s</span>
+          </div>
+
+          <div class="track-board" :class="{ wild: isWildTrack }">
+            <div
+              v-for="(row, ri) in trackRows"
+              :key="`row${ri}`"
+              class="track-row"
+              :class="row.dir"
+            >
+              <div
+                v-for="(cell, ci) in row.cells"
+                :key="cell"
+                class="track-cell"
+                :class="[
+                  cellZone(cell),
+                  {
+                    finish: cell === 30,
+                    start: cell === 0,
+                    exit: isTrackExit(row, ci),
+                    corner: isTrackExit(row, ci),
+                    special: !!specialAt(cell),
+                    alt: ci % 2 === 1,
+                  },
+                ]"
+                :style="ci === 0 && row.offset ? { gridColumnStart: row.offset + 1 } : undefined"
+              >
+                <span class="cell-no">{{ cell }}</span>
+                <span v-if="specialAt(cell)" class="cell-special" :title="specialAt(cell)?.label">
+                  {{ specialAt(cell)?.icon }}
+                </span>
+                <div class="piece-row">
+                  <span
+                    v-for="r in racersAt(cell)"
+                    :key="r.seatNo"
+                    class="piece"
+                    :class="{ mine: (r.ownerSeatNo ?? r.seatNo) === mySeat, tripped: r.tripped, finished: r.finishRank > 0 }"
+                    :style="{ background: `hsl(${racerHue(r.racerKey)}, 55%, 45%)` }"
+                    :title="`${r.name} · ${racerName(r.racerKey)}${r.tripped ? ' · 绊倒' : ''}`"
+                  >{{ shortName(r.name, 5) }}</span>
+                </div>
+                <span v-if="isTrackExit(row, ci)" class="cell-turn">{{ row.turn }}</span>
+                <span v-else class="cell-link">{{ row.dir === 'right' ? '›' : '‹' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="hasOptionalChoice" class="optional-panel">
+            <span class="optional-title">
+              本回合可选能力<template v-if="myActingRacer"> · 当前出场 {{ myActingRacer.name }}</template>：
+            </span>
+            <div v-for="opt in myOptionalOptions" :key="opt" class="optional-item">
+              <span class="optional-copy">
+                <b>{{ optionalLabel(opt) }}</b>
+                <small>{{ optionalDetail(opt) }}</small>
+              </span>
+              <!-- M5 双角色：TARGET_SEAT 提交的是参赛号 lane，用具体选手下拉避免座位/lane 混淆 -->
+              <select
+                v-if="opt === 'TARGET_SEAT' && isDoubleVariant"
+                v-model.number="optionalTarget"
+                class="optional-input"
+              >
+                <option :value="0" disabled>选择目标选手</option>
+                <option v-for="o in optionalTargetOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+              <input
+                v-else-if="opt !== 'USE_PRIMARY'"
+                v-model.number="optionalTarget"
+                class="optional-input"
+                type="number"
+                min="1"
+                :max="opt === 'GUESS_DICE' ? 6 : 30"
+                placeholder="数字"
+              />
+              <button type="button" class="optional-btn" @click="useOptional(opt)">使用</button>
+            </div>
+            <span v-if="optionalUsed" class="optional-ok">已声明，掷骰后生效</span>
+          </div>
+
+          <div class="race-ops">
+            <button type="button" class="primary" :disabled="!isMyRoll" @click="roll">
+              🎲 掷骰
+            </button>
+            <button type="button" class="catalog-trigger" @click="catalogOpen = true">
+              📖 选手图鉴
+            </button>
           </div>
         </div>
-      </div>
 
-      <div v-if="hasOptionalChoice" class="optional-panel">
-        <span class="optional-title">本回合可选能力：</span>
-        <div v-for="opt in myOptionalOptions" :key="opt" class="optional-item">
-          <span>{{ optionalLabel(opt) }}</span>
-          <!-- M5 双角色：TARGET_SEAT 提交的是参赛号 lane，用具体选手下拉避免座位/lane 混淆 -->
-          <select
-            v-if="opt === 'TARGET_SEAT' && isDoubleVariant"
-            v-model.number="optionalTarget"
-            class="optional-input"
-          >
-            <option :value="0" disabled>选择目标选手</option>
-            <option v-for="o in optionalTargetOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </select>
-          <input
-            v-else-if="opt !== 'USE_PRIMARY'"
-            v-model.number="optionalTarget"
-            class="optional-input"
-            type="number"
-            min="1"
-            :max="opt === 'GUESS_DICE' ? 6 : 30"
-            placeholder="数字"
-          />
-          <button type="button" class="optional-btn" @click="useOptional(opt)">使用</button>
-        </div>
-        <span v-if="optionalUsed" class="optional-ok">已声明，掷骰后生效</span>
-      </div>
+        <!-- 右侧：聊天 + 行动日志，与赛道同屏 -->
+        <aside class="race-side">
+          <section class="panel chat-panel">
+            <h3 class="panel-title">💬 玩家聊天</h3>
+            <div ref="chatBox" class="chat-messages">
+              <div v-for="(msg, i) in chatMessages" :key="i" class="chat-msg">
+                <span class="who" :class="msg.whoClass">{{ msg.who === 'system' ? '' : msg.who + ':' }}</span>
+                <span>{{ msg.text }}</span>
+              </div>
+            </div>
+            <div class="chat-input">
+              <input
+                v-model="chatText"
+                type="text"
+                placeholder="说点什么..."
+                maxlength="100"
+                @keyup.enter="sendChat"
+              />
+              <button type="button" class="chat-send" :disabled="!chatText.trim()" @click="sendChat">发送</button>
+            </div>
+          </section>
 
-      <div class="race-ops">
-        <button type="button" class="primary" :disabled="!isMyRoll" @click="roll">
-          🎲 掷骰
-        </button>
-        <div class="score-strip">
-          <span v-for="(total, seat) in snapshot?.scores ?? {}" :key="seat" class="score-chip">
-            {{ nameOfSeat(Number(seat)) }} <b>{{ total }}</b> 分
-          </span>
-        </div>
+          <section class="panel log-panel">
+            <h3 class="panel-title">📜 行动日志</h3>
+            <div ref="logBox" class="chat-messages log-messages">
+              <div v-for="(msg, i) in actionLogs" :key="i" class="chat-msg">
+                <span class="who" :class="msg.whoClass">{{ msg.who === 'system' ? '' : msg.who + ':' }}</span>
+                <span>{{ msg.text }}</span>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </section>
 
@@ -717,7 +1072,7 @@ function cardStyle(key: string): Record<string, string> {
         >
           <span class="rank-no">{{ s.rank }}</span>
           <span class="rank-name">{{ s.name }}{{ s.seatNo === mySeat ? '（我）' : '' }}</span>
-          <span class="rank-medals">🥇{{ s.gold }} · 🥈{{ s.silver }} · 🪙{{ s.bronze }}</span>
+          <span class="rank-medals">🥇{{ s.gold }} · 🥈{{ s.silver }} · 🪙{{ s.bronze }} 分</span>
           <strong class="rank-total">{{ s.total }} 分</strong>
         </div>
       </div>
@@ -740,6 +1095,9 @@ function cardStyle(key: string): Record<string, string> {
         {{ lastDiceMsg.auto ? '超时代掷' : '掷出' }}
         <b class="dice-value">🎲 {{ lastDiceMsg.value }}</b>
         <span v-if="lastDiceMsg.tripSkipped" class="trip-tag">绊倒 · 跳过主要移动</span>
+        <span v-if="triggeredAbilities.length" class="effect-tag" :title="triggeredAbilities.join('；')">
+          ⚡ 触发技能：{{ triggeredAbilities.join('、') }}
+        </span>
         <span v-else-if="lastDiceMsg.effects.length" class="effect-tag">
           {{ lastDiceMsg.effects.filter((e) => !e.startsWith('MAIN_MOVE')).join(' / ') }}
         </span>
@@ -754,6 +1112,19 @@ function cardStyle(key: string): Record<string, string> {
         <b>🥇 {{ lastRaceResult.goldName }} +{{ lastRaceResult.goldValue }}</b>
         <b>🥈 {{ lastRaceResult.silverName }} +{{ lastRaceResult.silverValue }}</b>
         <button type="button" class="close" @click="dismissRaceResult">×</button>
+      </div>
+    </Transition>
+
+    <!-- 选手图鉴弹层（与掷骰同处下方操作层触发） -->
+    <Transition name="flash">
+      <div v-if="catalogOpen" class="catalog-overlay" @click.self="catalogOpen = false">
+        <div class="catalog-modal">
+          <div class="catalog-modal-head">
+            <h3>选手图鉴</h3>
+            <button type="button" class="catalog-close" @click="catalogOpen = false">×</button>
+          </div>
+          <div class="catalog-modal-body"><RacerCatalog /></div>
+        </div>
       </div>
     </Transition>
   </div>
@@ -983,93 +1354,365 @@ button.primary {
   cursor: pointer;
 }
 
-/* ---- M2：赛道 ---- */
+/* ---- 比赛：左侧实时排名 + S 型赛道 ---- */
 .race-view {
-  max-width: 1320px;
+  max-width: 1680px;
   margin: 0 auto;
+}
+.race-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+/* ---- 比赛页右侧：聊天 + 行动日志 ---- */
+.race-side {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
+  min-width: 0;
+
+  .panel {
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  }
+  .panel-title { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+  .chat-messages {
+    height: 220px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--well-bg, rgba(0, 0, 0, 0.15));
+    scroll-behavior: smooth;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb, rgba(128, 128, 128, 0.4)) transparent;
+    &::-webkit-scrollbar { width: 6px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb {
+      background: var(--scroll-thumb, rgba(128, 128, 128, 0.4));
+      border-radius: 6px;
+    }
+  }
+  .log-messages { height: 300px; }
+  .chat-msg { margin-bottom: 8px; font-size: 12px; line-height: 1.45; word-break: break-all; }
+  .who {
+    margin-right: 6px;
+    font-weight: 600;
+    &.system { color: var(--muted); }
+    &.pc-0 { color: #4fc3f7; }
+    &.pc-1 { color: #ff8a80; }
+    &.pc-2 { color: #b9f6ca; }
+    &.pc-3 { color: #ffd180; }
+    &.pc-4 { color: #b388ff; }
+    &.pc-5 { color: #84ffff; }
+    &.pc-6 { color: #f48fb1; }
+    &.pc-7 { color: #a5d6a7; }
+  }
+  .chat-input {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 12px;
+    }
+    .chat-send {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+      &:disabled { opacity: 0.5; cursor: default; }
+      &:hover:not(:disabled) { border-color: var(--color-primary); }
+    }
+  }
 }
-.track {
-  display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 4px;
-  padding: 12px;
+.rank-panel {
+  position: sticky;
+  top: 16px;
+  z-index: 50; /* 悬停卡必须压在赛道之上 */
+  padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--surface-2, rgba(255, 255, 255, 0.03));
+}
+.rank-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  h3 { margin: 0; font-size: 19px; }
+  span { font-size: 13px; color: var(--muted); }
+}
+/* 作用域限定，避免被下方终局排名的同名类覆盖 */
+.rank-panel .rank-list { display: flex; flex-direction: column; gap: 10px; }
+.rank-panel .rank-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  outline: none;
+
+  &.mine { border-color: var(--color-primary); }
+  &.acting { box-shadow: inset 3px 0 0 var(--color-primary); }
+}
+.rank-panel .rank-no {
+  flex: 0 0 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: 16px;
+  font-weight: 800;
+}
+.rank-player {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  cursor: help;
+}
+.rank-panel .rank-name {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  small { font-size: 12px; font-weight: 400; color: var(--muted); }
+}
+.rank-score {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--muted);
+  b { color: var(--ink); font-size: 17px; }
+}
+.rank-tip { margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.card-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 100;
+  width: 280px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--color-primary);
+  background: var(--surface-3);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  pointer-events: none;
+}
+.rank-player:hover .card-popover,
+.rank-player:focus-within .card-popover,
+.rank-row:focus .card-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.pop-card {
+  padding: 8px 10px;
+  border-radius: 9px;
+  border-left: 4px solid hsl(var(--hue), 55%, 45%);
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  + .pop-card { margin-top: 8px; }
+}
+.pop-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  span { font-size: 12px; color: var(--muted); }
+}
+.pop-skill { margin: 5px 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.pop-state { font-size: 12px; color: var(--muted); }
+.pop-empty { margin: 0; font-size: 13px; color: var(--muted); }
+
+.race-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.track-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* 给行末 ↓ 转向标记留位置 */
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  /* 8 列自适应铺满，4 行 S 型连通，不再横向溢出 */
+  overflow: visible;
 
   &.wild { border-color: rgba(224, 165, 58, 0.5); }
 }
+.track-row {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
 .track-cell {
+  --zone-tint: transparent;
   position: relative;
-  min-height: 60px;
+  min-height: 78px;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--line);
-  background: var(--surface-1, transparent);
+  background-color: var(--surface-1, transparent);
+  background-image: linear-gradient(135deg, var(--zone-tint), transparent 78%);
   text-align: center;
 
-  &.start { border-color: #4f9d69; }
+  /* 四段分区：草原 → 湖泊 → 黄昏 → 终点，颜色只做底色不压棋子 */
+  &.zone-a { --zone-tint: rgba(79, 157, 105, 0.22); border-color: rgba(79, 157, 105, 0.42); }
+  &.zone-b { --zone-tint: rgba(70, 140, 235, 0.20); border-color: rgba(70, 140, 235, 0.40); }
+  &.zone-c { --zone-tint: rgba(160, 110, 235, 0.20); border-color: rgba(160, 110, 235, 0.40); }
+  &.zone-d { --zone-tint: rgba(224, 165, 58, 0.20); border-color: rgba(224, 165, 58, 0.40); }
+
+  /* 相邻格叠一层浅色纹理，避免同段内仍是一片同色 */
+  &.alt {
+    background-image:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 55%),
+      linear-gradient(135deg, var(--zone-tint), transparent 78%);
+  }
+
+  /* 狂野面特殊格：虚线 + 内发光 */
+  &.special {
+    border-style: dashed;
+    border-width: 2px;
+    box-shadow: inset 0 0 14px rgba(224, 165, 58, 0.22);
+  }
+
+  /* 拐弯格强调转向 */
+  &.corner { border-color: var(--color-primary); }
+
+  &.start {
+    border-color: #4f9d69;
+    background-image: linear-gradient(135deg, rgba(79, 157, 105, 0.4), transparent 85%);
+  }
   &.finish {
     border-color: #e0a53a;
-    background: rgba(224, 165, 58, 0.12);
+    background-image: linear-gradient(135deg, rgba(224, 165, 58, 0.4), transparent 85%);
   }
 }
 .cell-no {
   position: absolute;
-  top: 2px;
-  left: 4px;
-  font-size: 10px;
+  top: 3px;
+  left: 5px;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.track-cell.start .cell-no { color: #4f9d69; }
+.track-cell.finish .cell-no,
+.track-cell.special .cell-no { color: #e0a53a; }
 .cell-special {
   position: absolute;
-  top: 0;
-  right: 3px;
-  font-size: 12px;
+  top: 2px;
+  right: 4px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: rgba(224, 165, 58, 0.16);
+  font-size: 15px;
 }
 .piece-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 2px;
-  justify-content: center;
-  padding-top: 12px;
+  padding-top: 14px;
 }
 .piece {
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
+  width: 100%;
+  min-height: 20px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
   color: #fff;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 
   &.mine { outline: 2px solid #fff; outline-offset: 1px; }
   &.tripped { opacity: 0.55; filter: grayscale(0.7); }
   &.finished { box-shadow: 0 0 0 2px #e0a53a; }
 }
+/* S 型格子连接：行内箭头 + 行末转向标记 */
+.cell-link {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-primary);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.track-row.right .cell-link { right: -8px; }
+.track-row.left .cell-link { left: -8px; }
+.cell-turn {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-primary);
+  z-index: 2;
+  pointer-events: none;
+}
 .optional-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  max-width: 900px;
   margin: 8px auto;
   padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel, transparent);
-  .optional-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .optional-title { font-size: 14px; font-weight: 600; color: var(--ink); }
   .optional-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface-1, transparent);
+    font-size: 14px;
     color: var(--muted);
+  }
+  .optional-copy {
+    flex: 1 1 320px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    b { font-size: 14px; color: var(--ink); }
+    small { font-size: 12px; line-height: 1.5; color: var(--muted); }
   }
   .optional-input {
     width: 76px;
@@ -1088,7 +1731,7 @@ button.primary {
     background: transparent;
     &:hover { border-color: var(--brand, #409eff); }
   }
-  .optional-ok { font-size: 12px; color: #2e9e5b; }
+  .optional-ok { font-size: 13px; color: #2e9e5b; }
 }
 .race-ops {
   display: flex;
@@ -1097,19 +1740,59 @@ button.primary {
   gap: 16px;
   flex-wrap: wrap;
 }
-.score-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.score-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
+.catalog-trigger {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 16px;
+  border-radius: 10px;
   border: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--muted);
-  b { color: var(--ink); }
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
 }
+.catalog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.catalog-modal {
+  width: min(980px, 100%);
+  max-height: min(82vh, 860px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.catalog-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  h3 { margin: 0; font-size: 18px; }
+}
+.catalog-close {
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  &:hover { color: var(--ink); }
+}
+.catalog-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.racer-card.used { opacity: 0.45; filter: grayscale(1); cursor: not-allowed; }
 
 /* ---- M2：终局排名 ---- */
 .rank-list {
@@ -1152,19 +1835,25 @@ button.primary {
   padding: 1px 6px;
 }
 .effect-tag {
-  font-size: 11px;
-  color: var(--muted);
-  max-width: 260px;
+  font-size: 12px;
+  color: #e0a53a;
+  max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
 }
+.dice-toast { flex-wrap: wrap; max-width: min(92vw, 780px); }
 .result-toast { border-color: #e0a53a; gap: 10px; }
 
 @media (max-width: 720px) {
   .racer-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .hand-name { width: 84px; }
-  .track { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .race-layout { grid-template-columns: 1fr; }
+  .rank-panel { position: relative; top: auto; z-index: 50; }
   .rank-medals { display: none; }
+  .optional-item { flex-wrap: wrap; }
+  .optional-copy { flex-basis: 100%; }
+  .effect-tag { max-width: 60vw; }
 }
 </style>

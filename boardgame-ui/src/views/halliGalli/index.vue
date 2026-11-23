@@ -385,8 +385,8 @@ async function dissolveRoom(): Promise<void> {
         </el-button>
       </div>
       <div class="bar-right">
-        <el-button size="small" plain @click="goBackOrLobby(router)">← 返回上一页</el-button>
-        <el-button size="small" plain @click="backToLobby">← 返回大厅</el-button>
+        <el-button size="small" plain @click="goBackOrLobby(router)">⬅ 返回</el-button>
+        <el-button size="small" plain @click="backToLobby">⬅ 回到大厅</el-button>
         <el-button v-if="isHost" size="small" type="danger" plain @click="dissolveRoom">
           🗑 解散
         </el-button>
@@ -590,7 +590,7 @@ async function dissolveRoom(): Promise<void> {
             <span class="rc">{{ r.cardCount }} 张</span>
           </li>
         </ol>
-        <button type="button" class="primary" @click="backToLobby">返回大厅</button>
+        <button type="button" class="primary" @click="backToLobby">回到大厅</button>
       </div>
     </main>
   </div>

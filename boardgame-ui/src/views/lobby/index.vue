@@ -3,15 +3,20 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
-import { PLAYABLE_ADAPTERS, adapterOf } from '@/constants/gameAdapters'
+import { PLAYABLE_ADAPTERS, adapterOf, adapterByGameCode } from '@/constants/gameAdapters'
 import { getOnlineCount } from '@/api/online'
+import { getRecentMatches, type RecentMatch } from '@/api/match'
 import { useRoom } from '@/composables/useRoom'
 import { useUserStore } from '@/store/user'
-import { ZONES, gamesInZone, resolveLevel } from '@/constants/catalog'
+import type { Game } from '@/constants/catalog'
+import { ZONES, POSTER_GAME_KEYS, gamesInZone, resolveLevel } from '@/constants/catalog'
+import { findRuleBook } from '@/constants/rules'
 import ZoneGrid from '@/components/ZoneGrid.vue'
 import GameList from '@/components/GameList.vue'
 import BackToRoom from '@/components/BackToRoom.vue'
-import logoWordmark from '@/assets/logo-wordmark.png'
+import MessageCenter from '@/components/MessageCenter.vue'
+import FeedbackFab from '@/components/FeedbackFab.vue'
+import logoWordmark from '@/assets/logo-dicego-transparent.png'
 import { goBackOrLobby } from '@/utils/navigation'
 
 const router = useRouter()
@@ -23,6 +28,13 @@ const nav = computed(() => resolveLevel(route.query))
 
 /** 当前房间层游戏的能力适配器（D9：建房/列表/跳转全部查表，不再写 if/else） */
 const adapter = computed(() => adapterOf(nav.value.game?.key))
+
+/** 房间层顶部海报：有海报的游戏注入背景图，其余游戏用分区色块兜底 */
+function heroStyle(game: Game): Record<string, string> {
+  return POSTER_GAME_KEYS.has(game.key)
+    ? { '--hero-poster': `url('/posters/${game.key}.webp')` }
+    : {}
+}
 
 const {
   rooms,
@@ -53,6 +65,78 @@ async function refreshOnline(): Promise<void> {
   } catch {
     // 在线人数不影响大厅主流程，静默兜底
   }
+}
+
+/** 系统消息：静态运营内容（上新 / 更新 / 热门），无后端接口时也能展示 */
+interface SystemNews {
+  tag: '上新' | '更新' | '热门'
+  title: string
+  detail: string
+  date: string
+}
+const SYSTEM_NEWS: SystemNews[] = [
+  {
+    tag: '上新',
+    title: '伯明翰 Brass: Birmingham 海报入库',
+    detail: '硬核重策区筹备中，网络构建与经济经营值得期待',
+    date: '11-23',
+  },
+  {
+    tag: '上新',
+    title: '胡闹运动会 Magical Athlete 上线',
+    detail: '轮抽选手、掷骰竞速，2–6 人同场开跑',
+    date: '11-18',
+  },
+  {
+    tag: '更新',
+    title: '大厅导航升级为七分区',
+    detail: '按玩法机制找桌游，进区即可查看规则与房间',
+    date: '11-16',
+  },
+  {
+    tag: '热门',
+    title: '德国心脏病本周最热',
+    detail: '反应力对决，派对区房间持续开放',
+    date: '11-15',
+  },
+]
+
+/** 玩家战绩：复用全游戏共用接口，只取最近 5 场 */
+const recentMatches = ref<RecentMatch[]>([])
+const recentLoading = ref(false)
+
+async function loadRecent(): Promise<void> {
+  recentLoading.value = true
+  try {
+    const data = await getRecentMatches(5)
+    recentMatches.value = data.success ? (data.matches ?? []).slice(0, 5) : []
+  } catch {
+    // 战绩是装饰性信息：失败按空列表处理，不弹错打断大厅
+    recentMatches.value = []
+  } finally {
+    recentLoading.value = false
+  }
+}
+
+function matchGameName(code: string): string {
+  return adapterByGameCode(code)?.label ?? code
+}
+
+function matchResult(match: RecentMatch): string {
+  if (match.status !== '2') return '进行中'
+  if (match.win) return '胜'
+  return match.rankNo > 0 ? `第 ${match.rankNo} 名` : '负'
+}
+
+/** 起止时间差 → 分钟数；时间缺失或非法时显示占位符 */
+function matchDuration(match: RecentMatch): string {
+  if (!match.startTime || !match.endTime) return '—'
+  const minutes = Math.round(
+    (new Date(match.endTime).getTime() - new Date(match.startTime).getTime()) / 60_000,
+  )
+  if (!Number.isFinite(minutes) || minutes < 1) return '—'
+  if (minutes < 60) return `${minutes} 分`
+  return `${Math.floor(minutes / 60)} 时 ${minutes % 60} 分`
 }
 
 /** 建房容量：切换游戏时回落到该游戏的默认值 */
@@ -200,6 +284,7 @@ watch(
 
 onMounted(async () => {
   void refreshOnline()
+  void loadRecent()
   onlineTimer = window.setInterval(() => void refreshOnline(), 30_000)
   // 刷新后 store 仅水合了 token，需先补齐 userInfo；失败不阻断匿名列表
   if (userStore.isLogin && !userStore.userInfo) {
@@ -228,11 +313,12 @@ onUnmounted(() => {
     <div class="lobby-top">
       <div class="lobby-top-in">
         <img class="lobby-logo" :src="logoWordmark" alt="DiceGo" />
+        <span class="online-badge" title="统计所有游戏中当前在线的玩家（同一账号只算一人）">
+          <i class="online-dot" aria-hidden="true"></i>
+          在线 <b>{{ onlineCount ?? '—' }}</b> 人
+        </span>
         <div class="lobby-top-actions">
-          <span class="online-badge" title="统计所有游戏中当前在线的玩家（同一账号只算一人）">
-            <i class="online-dot" aria-hidden="true"></i>
-            在线 <b>{{ onlineCount ?? '—' }}</b> 人
-          </span>
+          <MessageCenter />
           <button
             type="button"
             class="lobby-user-link"
@@ -256,10 +342,10 @@ onUnmounted(() => {
     <div class="lobby-wrap">
       <nav v-if="nav.level > 0" class="lobby-crumb" aria-label="大厅层级">
         <button type="button" class="btn btn-ghost btn-sm" @click="goBackOrLobby(router)">
-          ← 返回上一页
+          ⬅ 返回
         </button>
         <button type="button" class="btn btn-ghost btn-sm" @click="backToLobby">
-          ← 返回大厅
+          ⬅ 回到大厅
         </button>
         <span class="crumb-zone">{{ nav.zone?.name }}</span>
         <span v-if="nav.game" class="crumb-sep">/</span>
@@ -270,9 +356,10 @@ onUnmounted(() => {
       <template v-if="nav.level === 0">
         <div class="lobby-guide">
           <div class="guide-copy rise" style="--i: 0">
-            <h1 class="guide-title">选一款桌游，坐下。</h1>
+            <h1 class="guide-title">选一款桌游开玩</h1>
             <p class="guide-lede">
-              有房间号？<b>右侧直接入场</b>。想逛逛？下面七个分区按玩法机制划分——挑一个合你口味的，进去看桌游。
+              <span>有人等你？右侧输入房间号赴约</span>
+              <span>还没想好？点击分区参考看看</span>
             </p>
           </div>
           <form class="fastjoin rise" style="--i: 1" @submit.prevent>
@@ -296,16 +383,57 @@ onUnmounted(() => {
                 <span v-if="loading" class="spin"></span>加入
               </button>
             </div>
-            <p class="hint">从朋友那里拿到房间号，输入即可快速入场</p>
+            <p class="hint">
+              <span>从朋友那里拿到房间号，</span>
+              <span>输入即可快速入场。</span>
+            </p>
           </form>
         </div>
         <ZoneGrid :zones="ZONES" @select="openZone" />
-        <section class="design-entry op rise" style="--i: 8" @click="goDesign">
+
+        <section class="lobby-side-panels">
+          <div class="side-panel news-panel rise" style="--i: 7">
+            <h2 class="panel-title">📢 平台消息</h2>
+            <ul class="news-list">
+              <li v-for="news in SYSTEM_NEWS" :key="news.title" class="news-item">
+                <span class="news-tag" :class="`tag-${news.tag}`">{{ news.tag }}</span>
+                <span class="news-text">
+                  <b>{{ news.title }}</b>
+                  <small>{{ news.detail }}</small>
+                </span>
+                <time class="news-date">{{ news.date }}</time>
+              </li>
+            </ul>
+          </div>
+
+          <div class="side-panel record-panel rise" style="--i: 8">
+            <h2 class="panel-title">🏆 我的战绩 <small>最近 5 场</small></h2>
+            <div class="record-head">
+              <span>桌游</span><span>人数</span><span>时长</span><span>胜负</span>
+            </div>
+            <div v-if="recentLoading" class="panel-empty">加载中…</div>
+            <div v-else-if="recentMatches.length === 0" class="panel-empty">
+              还没有对局记录，去大厅开一局吧
+            </div>
+            <ul v-else class="record-list">
+              <li v-for="match in recentMatches" :key="match.matchNo" class="record-row">
+                <span class="rec-name">{{ matchGameName(match.gameCode) }}</span>
+                <span>{{ match.playerCount }} 人</span>
+                <span>{{ matchDuration(match) }}</span>
+                <span class="rec-result" :class="{ win: match.status === '2' && match.win }">
+                  {{ matchResult(match) }}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="design-entry op rise" style="--i: 9" @click="goDesign">
           <div class="design-entry-copy">
             <h2 class="design-entry-title">桌游设计助手</h2>
             <p class="design-entry-lede">样本 · 机制 · 数值模拟工作台</p>
           </div>
-          <span class="design-entry-arrow" aria-hidden="true">→</span>
+          <span class="design-entry-arrow" aria-hidden="true">➜</span>
         </section>
       </template>
 
@@ -320,6 +448,30 @@ onUnmounted(() => {
 
       <!-- level 2：房间操作 + 房间列表 -->
       <template v-if="nav.level === 2">
+        <section
+          v-if="nav.game"
+          class="game-hero rise"
+          :class="{ 'has-poster': POSTER_GAME_KEYS.has(nav.game.key) }"
+          :style="heroStyle(nav.game)"
+        >
+          <div class="hero-copy">
+            <span class="hero-kicker">{{ nav.zone?.name }} · 背景故事</span>
+            <h2 class="hero-name">{{ nav.game.name }}</h2>
+            <p class="hero-story">{{ nav.game.story ?? nav.game.desc }}</p>
+            <div class="hero-ops">
+              <span v-if="nav.game.players" class="hero-meta">{{ nav.game.players }} 人同场</span>
+              <button
+                v-if="findRuleBook(nav.game.key)"
+                type="button"
+                class="btn btn-ghost btn-sm"
+                @click="router.push(`/rules/${nav.game.key}`)"
+              >
+                📖 查看规则
+              </button>
+            </div>
+          </div>
+        </section>
+
         <div class="room-ops">
           <div class="op rise" style="--i: 0">
             <h2 class="op-title"><span class="stepno">开局</span>创建房间</h2>
@@ -452,6 +604,8 @@ onUnmounted(() => {
 
     <!-- 意外离开房间后，右下角一键返回 -->
     <BackToRoom />
+    <!-- 大厅右下角意见反馈入口（管理员在消息中心查看） -->
+    <FeedbackFab />
   </div>
 </template>
 
@@ -482,7 +636,11 @@ onUnmounted(() => {
   height: 64px;
 }
 .lobby-logo {
-  height: 26px;
+  height: 30px;
+}
+/* 在线人数紧贴左侧 logo */
+.lobby-top-in > .online-badge {
+  margin-left: 0;
 }
 .lobby-top-actions {
   margin-left: auto;
@@ -655,6 +813,7 @@ input[type='text'] {
   font-size: 13px;
   color: var(--muted);
   margin: 0;
+  span { display: block; }
 }
 .spin {
   width: 12px;
@@ -676,7 +835,7 @@ input[type='text'] {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
   gap: clamp(24px, 4vw, 56px);
-  align-items: end;
+  align-items: center;
   padding: clamp(32px, 5vw, 56px) 0 clamp(24px, 3vw, 36px);
 }
 .guide-title {
@@ -692,6 +851,7 @@ input[type='text'] {
   font-size: 16px;
   max-width: 30em;
   text-wrap: pretty;
+  span { display: block; }
   b {
     color: var(--ink);
     font-weight: 600;
@@ -755,6 +915,186 @@ input[type='text'] {
 .design-entry-arrow {
   color: var(--color-primary);
   font-size: 20px;
+}
+
+/* ---- level 0 消息 / 战绩栏 ---- */
+.lobby-side-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 20px;
+}
+.side-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 18px 20px;
+  min-width: 0;
+}
+.panel-title {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+  small {
+    margin-left: 8px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--muted);
+  }
+}
+.news-list,
+.record-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.news-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  &:last-child { border-bottom: none; }
+}
+.news-tag {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  color: var(--color-primary);
+  background: var(--accent-soft);
+  &.tag-更新 { color: #6fa8dc; border-color: currentColor; background: transparent; }
+  &.tag-热门 { color: #e0a53a; border-color: currentColor; background: transparent; }
+}
+.news-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  b { font-size: 14px; font-weight: 600; }
+  small { font-size: 12px; color: var(--muted); }
+}
+.news-date {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.record-head,
+.record-row {
+  display: grid;
+  grid-template-columns: 1fr 56px 72px 64px;
+  align-items: center;
+  gap: 8px;
+}
+.record-head {
+  padding: 0 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.record-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  &:last-child { border-bottom: none; }
+}
+.rec-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-result.win { color: #4f9d69; font-weight: 700; }
+.panel-empty {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 820px) {
+  .lobby-side-panels { grid-template-columns: 1fr; }
+}
+
+/* ---- level 2 桌游介绍区 ---- */
+.game-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 220px;
+  margin-top: 24px;
+  padding: 28px 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1);
+
+  &:not(.has-poster) { justify-content: flex-start; }
+
+  &.has-poster::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--hero-poster);
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: auto 140%;
+    filter: saturate(1.1) brightness(0.72);
+    opacity: 0.75;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.55) 38%, transparent 70%);
+    mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.55) 38%, transparent 70%);
+    pointer-events: none;
+  }
+  &.has-poster::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 18%, var(--surface-2) 72%);
+    pointer-events: none;
+  }
+}
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 620px;
+}
+.hero-kicker {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+}
+.hero-name {
+  margin: 4px 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 400;
+}
+.hero-story {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.hero-ops {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.hero-meta {
+  font-size: 13px;
+  color: var(--color-primary);
+}
+@media (max-width: 820px) {
+  .game-hero { justify-content: flex-start; padding: 22px; }
+  .hero-copy { max-width: 100%; }
 }
 
 /* ---- level 2 操作卡 ---- */

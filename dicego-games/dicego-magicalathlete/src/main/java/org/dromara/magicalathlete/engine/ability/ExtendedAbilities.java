@@ -198,8 +198,10 @@ public final class ExtendedAbilities {
             return List.of(new Effect(EffectType.SCORE, h, h, 2, "heckler@seat" + h + ":+2"));
         });
 
-        // 可爱的倒霉蛋：回合初独自垫底获 1 分（绊倒不影响）
+        // 可爱的倒霉蛋：自己回合初独自垫底获 1 分（绊倒不影响）
+        // 必须限定 handlerSeat == currentActor，否则别人每次掷骰都会触发，变成每轮多次得分
         r.register("lovable_loser", AbilityEvent.DICE_RESULT, ctx -> {
+            if (!isActor(ctx)) return List.of();
             int h = ctx.handlerSeat();
             AbilityContext.Seat self = ctx.seat(h);
             if (self == null || self.finishRank > 0) return List.of();

@@ -42,6 +42,7 @@ import java.util.Map;
  * @param activeRacerKeysByLane 参赛号 → 出场选手 key（RACE 公开；M5 双角色精确视图）
  * @param myActiveRacerKeys  MUSTER 阶段收件人已暗选的选手（按提交顺序；M5 双角色含 2 名）
  * @param musterProgress     真实座位 → 本场已暗选数（MUSTER 公开，不含 key，M5）
+ * @param usedRacerKeys      过往场次已出场过的选手 key（公开信息；用于前端灰显，不泄露当前暗选）
  */
 public record MagicalAthleteSnapshotVO(
     String phase,
@@ -73,7 +74,8 @@ public record MagicalAthleteSnapshotVO(
     Map<Integer, Integer> laneToSeat,
     Map<String, String> activeRacerKeysByLane,
     List<String> myActiveRacerKeys,
-    Map<Integer, Integer> musterProgress
+    Map<Integer, Integer> musterProgress,
+    List<String> usedRacerKeys
 ) {
     /** 兼容 M1–M4 的旧构造（新增字段全部取普通局默认值），保证老测试零回归 */
     public MagicalAthleteSnapshotVO(String phase, int raceNo, int batch,
@@ -88,7 +90,7 @@ public record MagicalAthleteSnapshotVO(
         this(phase, raceNo, batch, pickOrder, pickIndex, pool, hands, currentSeatNo, deadlineAt,
             finished, players, readySeats, activeRacerKeys, myActiveRacerKey, racers,
             lastDice, diceSeatNo, lastEffects, goldSeat, silverSeat, scores, rankings,
-            myOptionalOptions, "NORMAL", 1, null, Map.of(), Map.of(), List.of(), Map.of());
+            myOptionalOptions, "NORMAL", 1, null, Map.of(), Map.of(), List.of(), Map.of(), List.of());
     }
 
     public record PlayerVO(int seatNo, String name, boolean online, boolean afk) {
