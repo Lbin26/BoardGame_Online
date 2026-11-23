@@ -86,17 +86,22 @@ systemctl restart dicego
 
 log "安装 Nginx 站点"
 cp -f "$SRC_DIR/deploy/nginx-dicego.conf" /etc/nginx/conf.d/dicego.conf
+# 移除 Ubuntu 默认站点，避免两个 server_name "_" 在 80 端口冲突导致落到默认页
+rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
 log "等待服务启动"
-for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:8080/actuator/health >/dev/null 2>&1; then
-    echo "后端已就绪"
+# actuator health 带 Basic Auth（prod profile 里 monitor.username/password 默认 ruoyi/123456）
+READY=0
+for _ in $(seq 1 45); do
+  if [ "$(curl -s -o /dev/null -w '%{http_code}' -u "${MONITOR_USER:-ruoyi}:${MONITOR_PASS:-123456}" http://127.0.0.1:8080/actuator/health)" = "200" ]; then
+    READY=1
     break
   fi
   sleep 2
 done
-systemctl is-active --quiet dicego || die "服务启动失败，请执行：journalctl -u dicego -n 100 --no-pager"
+systemctl is-active --quiet dicego || die "服务启动失败，请执行：tail -n 100 $SERVER_DIR/logs/sys-error.log"
+[ "$READY" -eq 1 ] || echo "[WARN] 健康检查未通过（可能 monitor 账号密码与 prod profile 默认值不同），请手动验证：curl -u ruoyi:123456 http://127.0.0.1:8080/actuator/health"
 
 echo ""
 echo "部署完成："
