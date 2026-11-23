@@ -5,6 +5,8 @@ import { ElMessage } from 'element-plus'
 
 import { PLAYABLE_ADAPTERS, adapterOf, adapterByGameCode } from '@/constants/gameAdapters'
 import { getOnlineCount } from '@/api/online'
+import { getGameDefinitions } from '@/api/game'
+import { collectNewGameKeys } from '@/utils/newGames'
 import { getRecentMatches, type RecentMatch } from '@/api/match'
 import { useRoom } from '@/composables/useRoom'
 import { useUserStore } from '@/store/user'
@@ -56,6 +58,18 @@ const {
 /** 平台在线人数：顶栏常显，30s 刷新一次（后端按玩家名去重，跨游戏合并） */
 const onlineCount = ref<number | null>(null)
 let onlineTimer: number | null = null
+
+/** 新上线游戏：后端 game_definition.create_time 决定，按前端 game key 索引（失败时降级为空，不阻断大厅） */
+const newGameKeys = ref<Set<string>>(new Set())
+
+async function loadGameDefinitions(): Promise<void> {
+  try {
+    const data = await getGameDefinitions()
+    if (data?.success) newGameKeys.value = collectNewGameKeys(data.games)
+  } catch {
+    newGameKeys.value = new Set()
+  }
+}
 
 /** 装饰性信息：请求失败保留上次值，不弹错、不打断大厅 */
 async function refreshOnline(): Promise<void> {
@@ -284,6 +298,7 @@ watch(
 
 onMounted(async () => {
   void refreshOnline()
+  void loadGameDefinitions()
   void loadRecent()
   onlineTimer = window.setInterval(() => void refreshOnline(), 30_000)
   // 刷新后 store 仅水合了 token，需先补齐 userInfo；失败不阻断匿名列表
@@ -312,7 +327,7 @@ onUnmounted(() => {
   <div class="lobby-page">
     <div class="lobby-top">
       <div class="lobby-top-in">
-        <img class="lobby-logo" :src="logoWordmark" alt="DiceGo" />
+        <img class="lobby-logo theme-logo" :src="logoWordmark" alt="DiceGo" />
         <span class="online-badge" title="统计所有游戏中当前在线的玩家（同一账号只算一人）">
           <i class="online-dot" aria-hidden="true"></i>
           在线 <b>{{ onlineCount ?? '—' }}</b> 人
@@ -389,7 +404,7 @@ onUnmounted(() => {
             </p>
           </form>
         </div>
-        <ZoneGrid :zones="ZONES" @select="openZone" />
+        <ZoneGrid :zones="ZONES" :new-keys="newGameKeys" @select="openZone" />
 
         <section class="lobby-side-panels">
           <div class="side-panel news-panel rise" style="--i: 7">
@@ -442,6 +457,7 @@ onUnmounted(() => {
         v-else-if="nav.level === 1 && nav.zone"
         :zone="nav.zone!"
         :games="gamesInZone(nav.zone!.key)"
+        :new-keys="newGameKeys"
         @select="openGame"
         @rules="(key) => router.push(`/rules/${key}`)"
       />

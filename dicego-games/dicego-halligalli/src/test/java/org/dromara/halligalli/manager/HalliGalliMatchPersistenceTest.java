@@ -96,6 +96,23 @@ class HalliGalliMatchPersistenceTest {
     }
 
     @Test
+    void 同一用户多开多昵称只占一个真实座位_其余降级哨兵() {
+        // 回归：本机用一个账号开多个昵称，若都绑定同一 user_id，开局落库会撞
+        // uk_match_user(match_id,user_id) 唯一键并回滚整局。只有最早绑定的昵称保留真实 ID。
+        FakeRecorder recorder = new FakeRecorder();
+        HalliGalliRoom room = room(3, recorder);
+        room.bindUser("p1", 777L);
+        room.bindUser("p2", 777L); // 同一 user_id 第二昵称 → 拒绝
+        room.bindUser("p3", 777L); // 第三昵称 → 拒绝
+
+        assertEquals(HalliGalliRoom.StartResult.SUCCESS, room.startGame("p1"));
+        assertEquals(3, recorder.startedRefs.size());
+        assertEquals(777L, recorder.startedRefs.get(0).userId());
+        assertEquals(-2L, recorder.startedRefs.get(1).userId());
+        assertEquals(-3L, recorder.startedRefs.get(2).userId());
+    }
+
+    @Test
     void 翻牌成功写FLIP且回合号递增_被拒绝的翻牌不写() {
         FakeRecorder recorder = new FakeRecorder();
         HalliGalliRoom room = room(3, recorder);

@@ -78,8 +78,8 @@ snail-ai:
 --- # MyBatis Plus 配置
 mybatis-plus:
   sql-log:
-    # 完整 SQL 输出开关
-    enabled: true
+    # 完整 SQL 输出开关（本地联调若需排查 SQL 临时改回 true；关闭可减少大量控制台 IO，启动与运行都更快）
+    enabled: false
     # 输出方式，可选 console、log
     output: console
 

@@ -1,15 +1,15 @@
 import { ref } from 'vue'
 
-export type SfxName = 'flip' | 'bell' | 'buzz'
+export type SfxName = 'flip' | 'bell' | 'buzz' | 'dice'
 
 const STORAGE_KEY = 'dicego.sfx.muted'
 
 /**
- * 对局音效：翻牌 / 抢对 / 抢错。
+ * 对局音效：翻牌 / 抢对 / 抢错 / 掷骰。
  *
- * 全部用 Web Audio 合成，不引入音频文件——三种音色都是极短的包络，素材收益远低于维护成本。
+ * 全部用 Web Audio 合成，不引入音频文件——音色都是极短的包络，素材收益远低于维护成本。
  * 浏览器的自动播放策略要求先有用户手势，因此 AudioContext 惰性创建，且 `unlock()`
- * 应在首次点击（入座、开始、抢铃）时调用，否则对手触发的音效会被静默丢弃。
+ * 应在首次点击（入座、开始、抢铃、掷骰）时调用，否则对手触发的音效会被静默丢弃。
  */
 export function useGameSfx(storageKey = STORAGE_KEY) {
   const muted = ref(readMuted(storageKey))
@@ -98,6 +98,25 @@ export function useGameSfx(storageKey = STORAGE_KEY) {
         osc.connect(gain).connect(c.destination)
         osc.start(t)
         osc.stop(t + 0.08)
+        break
+      }
+      case 'dice': {
+        // 骰子翻滚：一串短促的「咔哒」脉冲，频率逐个略降，模拟在桌面弹跳减速。
+        // 用 triangle 而非 white noise，避免刺耳；脉冲包络 25ms，间隔 70ms，共 8 下 ≈ 560ms。
+        const hits = 8
+        for (let i = 0; i < hits; i++) {
+          const at = t + i * 0.07
+          const osc = c.createOscillator()
+          const gain = c.createGain()
+          osc.type = 'triangle'
+          osc.frequency.setValueAtTime(420 - i * 18, at)
+          gain.gain.setValueAtTime(0.0001, at)
+          gain.gain.exponentialRampToValueAtTime(0.12 - i * 0.008, at + 0.004)
+          gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.025)
+          osc.connect(gain).connect(c.destination)
+          osc.start(at)
+          osc.stop(at + 0.03)
+        }
         break
       }
       default:

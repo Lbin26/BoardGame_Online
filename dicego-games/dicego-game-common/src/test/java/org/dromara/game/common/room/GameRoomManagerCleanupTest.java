@@ -115,4 +115,12 @@ class GameRoomManagerCleanupTest {
         manager.cleanup(room.getLastActivityAt() + FINISHED_GRACE + 1);
         assertNotNull(manager.getRoom(room.getRoomId()));
     }
+
+    @Test
+    void roomOlderThanOneHourIsClosedEvenWithConnectedPlayers() {
+        TestRoom room = create();
+        room.markConnected("alice", true);
+        manager.cleanup(room.getCreatedAt() + 3_600_000 + 1);
+        assertNull(manager.getRoom(room.getRoomId()));
+    }
 }

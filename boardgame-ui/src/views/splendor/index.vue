@@ -318,7 +318,13 @@ function chooseNoble(noble: SplendorNoble): void {
 async function chooseSeat(seatNo: number): Promise<void> {
   const roomId = room.value?.roomId
   if (!roomId || !myName.value) return
-  if (room.value?.seats[seatNo - 1]?.playerName === myName.value) return
+  // 与其它游戏统一：自己座位幂等返回；他人占用的座位提示且不发请求
+  const occupant = room.value?.seats[seatNo - 1]?.playerName
+  if (occupant === myName.value) return
+  if (occupant) {
+    ElMessage.warning('该座位已被占用')
+    return
+  }
   try {
     const data = await splendorApi.takeSeat(roomId, myName.value, seatNo)
     applyRoom(data)

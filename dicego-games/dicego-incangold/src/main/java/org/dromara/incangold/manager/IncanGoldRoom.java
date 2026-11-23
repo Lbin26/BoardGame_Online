@@ -188,6 +188,17 @@ public class IncanGoldRoom extends GameRoom {
     /** 玩家名 ↔ sys_user.user_id 绑定，建房/入座时由 Controller 调用 */
     public synchronized void bindUser(String playerName, Long userId) {
         if (playerName == null || userId == null || userId <= 0) return;
+        // 同一真实用户一局只能占一个座位：本机多开时后续昵称会被 resolveUserId 解析成同一个
+        // user_id，若照单全收，onStart 插入 game_match_player 会撞 uk_match_user(match_id,user_id)
+        // 唯一键并触发事务回滚，整局战绩丢失。多出的昵称降级为游客哨兵（boundUserIdOf 负数分支）。
+        if (userIdByName.containsKey(playerName)) {
+            // 同一昵称重复绑定（建房 + 入座各一次）允许覆盖为相同值
+            userIdByName.put(playerName, userId);
+            return;
+        }
+        for (Map.Entry<String, Long> e : userIdByName.entrySet()) {
+            if (!e.getKey().equals(playerName) && userId.equals(e.getValue())) return;
+        }
         userIdByName.put(playerName, userId);
     }
 

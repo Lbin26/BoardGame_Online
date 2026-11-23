@@ -52,6 +52,16 @@ describe('GameList', () => {
     expect(cards[0].classes()).not.toContain('has-poster')
     expect(cards[0].attributes('style')).not.toContain('--poster')
   })
+  it('shows NEW badge only for games in newKeys', () => {
+    const w = mount(GameList, {
+      props: {
+        zone: findZone('card')!,
+        games: gamesInZone('card'),
+        newKeys: new Set(['splendor']),
+      },
+    })
+    expect(w.findAll('.new-badge').map((b) => b.text())).toEqual(['NEW'])
+  })
   it('renders preparation empty state for zones without games', () => {
     const w = mount(GameList, { props: { zone: findZone('party')!, games: [] } })
     expect(w.find('.zone-empty').exists()).toBe(true)

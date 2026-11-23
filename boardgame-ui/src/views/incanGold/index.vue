@@ -44,9 +44,9 @@ function cardIcon(card: IncanGoldFieldCard): string {
 }
 
 function cardLabel(card: IncanGoldFieldCard): string {
-  // 余数无论是否为 0 都要明示：0 代表本次分配没有找零，同样是结算信息
+  // 剩余宝石无论是否为 0 都要明示：0 代表本次分配没有找零，同样是结算信息
   if (card.kind === 'TREASURE') {
-    return `${card.value} · 余数 ${card.remainder}`
+    return `${card.value} · 剩余 ${card.remainder}`
   }
   if (card.kind === 'ARTIFACT') return `神器 #${card.value}`
   return hazardOf(card.hazard).name
@@ -222,6 +222,12 @@ async function refresh(): Promise<void> {
 
 async function takeSeat(seatNo: number): Promise<void> {
   if (!myName.value) return
+  // 与其它游戏统一：他人占用的座位直接提示，不发请求；自己座位幂等由服务端处理
+  const target = room.value?.seats.find((s) => s.seatNo === seatNo)
+  if (target?.name && target.name !== myName.value) {
+    ElMessage.warning('该座位已被占用')
+    return
+  }
   try {
     const data = await api.takeSeat(roomId.value, myName.value, seatNo)
     if (data.success && data.room) room.value = data.room
@@ -290,19 +296,25 @@ async function copyRoomId(): Promise<void> {
             v-for="seat in room.seats"
             :key="seat.seatNo"
             class="seat"
-            :class="{ mine: seat.name === myName }"
+            :class="{
+              occupied: !!seat.name,
+              mine: seat.name === myName,
+              free: !seat.name,
+            }"
+            @click="takeSeat(seat.seatNo)"
           >
             <span class="seat-no">{{ seat.seatNo }}</span>
             <template v-if="seat.name">
               <span class="seat-name">{{ seat.name }}</span>
               <span v-if="seat.name === room.hostName" class="host-badge">房主</span>
-              <button v-if="seat.name === myName" type="button" class="seat-act" @click="standUp">
+              <button v-if="seat.name === myName" type="button" class="seat-act" @click.stop="standUp">
                 起身
               </button>
             </template>
-            <button v-else type="button" class="seat-empty" @click="takeSeat(seat.seatNo)">
-              + 空位
-            </button>
+            <template v-else>
+              <span class="seat-name">空位</span>
+              <span class="seat-empty-hint">点击入座</span>
+            </template>
           </div>
         </div>
         <div class="waiting-actions">
@@ -517,6 +529,15 @@ async function copyRoomId(): Promise<void> {
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  &:hover { border-color: var(--accent-hover); }
+  &.free {
+    border-style: dashed;
+    color: var(--muted);
+    &:hover { background: var(--accent-soft); }
+  }
+  &.occupied:not(.mine) { cursor: not-allowed; }
   &.mine { border-color: var(--color-primary); background: var(--accent-soft); }
 }
 .seat-no {
@@ -530,12 +551,12 @@ async function copyRoomId(): Promise<void> {
   font-size: 12px;
 }
 .seat-name { flex: 1; font-size: 14px; }
+.seat-empty-hint { font-size: 12px; color: var(--muted); }
 .host-badge {
   font-size: 11px;
   color: var(--color-primary);
 }
-.seat-act,
-.seat-empty {
+.seat-act {
   font: inherit;
   font-size: 12px;
   color: var(--muted);

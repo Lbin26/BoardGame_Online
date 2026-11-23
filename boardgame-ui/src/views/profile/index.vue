@@ -9,7 +9,7 @@ import type { UpdateProfileBody } from '@/api/user'
 import { ZONES } from '@/constants/catalog'
 import { adapterByGameCode } from '@/constants/gameAdapters'
 import { useUserStore } from '@/store/user'
-import logoWordmark from '@/assets/logo-wordmark.png'
+import logoWordmark from '@/assets/logo-dicego-transparent.png'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -185,7 +185,7 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div class="profile-page">
-    <img class="profile-logo" :src="logoWordmark" alt="DiceGo" />
+    <img class="profile-logo theme-logo" :src="logoWordmark" alt="DiceGo" />
     <el-card class="profile-card">
       <template #header>
         <div class="profile-head">

@@ -9,8 +9,10 @@ import type {
   MagicalAthleteRacerState,
   MagicalAthleteSnapshot,
 } from '@/api/magicalAthlete'
+import DiceRoll from '@/components/DiceRoll.vue'
 import RacerCatalog from '@/components/RacerCatalog.vue'
 import { useChat, type ChatMessage } from '@/composables/useChat'
+import { useGameSfx } from '@/composables/useGameSfx'
 import { useGameWebSocket } from '@/composables/useGameWebSocket'
 import { useRoomEntry } from '@/composables/useRoomEntry'
 import { racerHue, racerInfo, racerName, typeLabel } from '@/constants/racers'
@@ -19,6 +21,12 @@ import { goBackOrLobby } from '@/utils/navigation'
 
 const route = useRoute()
 const router = useRouter()
+// 掷骰音效（合成音，无音频文件）；静音状态跨局记忆，与其它游戏共用一个 key
+const {
+  muted: sfxMuted,
+  toggle: toggleSfx,
+  unlock: unlockSfx,
+} = useGameSfx()
 
 const room = ref<MagicalAthleteRoomInfo | null>(null)
 const snapshot = ref<MagicalAthleteSnapshot | null>(null)
@@ -48,7 +56,9 @@ const lastDiceMsg = ref<{
   auto: boolean
   effects: string[]
 } | null>(null)
-const DICE_TOAST_HOLD_MS = 2200
+const DICE_TOAST_HOLD_MS = 3200
+/** 每次收到 DICE_RESULT 自增，驱动骰子重播翻滚动画（点数相同也能重播） */
+const diceTrigger = ref(0)
 
 /** 单场结算播报 */
 const lastRaceResult = ref<{
@@ -142,6 +152,9 @@ function handleMessage(msg: { type?: string; playerName?: string; payload?: Reco
         auto: !!payload.auto,
         effects: (payload.effects as string[]) ?? [],
       }
+      // 触发 3D 翻滚动画：服务端只给最终点数，翻滚帧由 DiceRoll 在本地生成
+      diceTrigger.value++
+      unlockSfx()
       autoDismiss(() => {
         const cur = lastDiceMsg.value
         if (cur && cur.seatNo === payload.seatNo && cur.value === payload.value) lastDiceMsg.value = null
@@ -635,6 +648,12 @@ async function copyRoomId(): Promise<void> {
 
 async function seatAt(seatNo: number): Promise<void> {
   if (!myName.value) return
+  // 与其它游戏统一：他人占用的座位不重复发请求，直接提示
+  const target = room.value?.seats.find((s) => s.seatNo === seatNo)
+  if (target?.name && target.name !== myName.value) {
+    ElMessage.warning('该座位已被占用')
+    return
+  }
   try {
     const data = await api.takeSeat(roomId.value, myName.value, seatNo)
     if (!data.success) ElMessage.warning(data.error ?? '入座失败')
@@ -660,6 +679,8 @@ async function dissolveRoom(): Promise<void> {
 
 let ticker: number | null = null
 onMounted(() => {
+  // 首次任意点击解除浏览器自动播放限制，否则对手掷骰的音效会被静默丢弃
+  window.addEventListener('pointerdown', unlockSfx, { once: true })
   ticker = window.setInterval(() => {
     clock.value = Date.now()
   }, 250)
@@ -689,6 +710,9 @@ function cardStyle(key: string): Record<string, string> {
         <span class="round-info">第 {{ snapshot?.raceNo || '—' }} 场</span>
         <span class="round-info">{{ statusText }}</span>
         <el-button size="small" plain @click="router.push('/rules/magicalAthlete')">📖 规则</el-button>
+        <el-button size="small" plain @click="toggleSfx">
+          {{ sfxMuted ? '🔇 音效' : '🔊 音效' }}
+        </el-button>
       </div>
       <div class="bar-right">
         <el-button size="small" plain @click="goBackOrLobby(router)">⬅ 返回</el-button>
@@ -1093,7 +1117,7 @@ function cardStyle(key: string): Record<string, string> {
       <div v-if="lastDiceMsg" class="pick-toast dice-toast" :class="{ auto: lastDiceMsg.auto }">
         <strong>{{ nameOfSeat(lastDiceMsg.seatNo) }}</strong>
         {{ lastDiceMsg.auto ? '超时代掷' : '掷出' }}
-        <b class="dice-value">🎲 {{ lastDiceMsg.value }}</b>
+        <DiceRoll :value="lastDiceMsg.value" :trigger="diceTrigger" :size="56" />
         <span v-if="lastDiceMsg.tripSkipped" class="trip-tag">绊倒 · 跳过主要移动</span>
         <span v-if="triggeredAbilities.length" class="effect-tag" :title="triggeredAbilities.join('；')">
           ⚡ 触发技能：{{ triggeredAbilities.join('、') }}
@@ -1826,7 +1850,6 @@ button.primary {
 
 /* ---- M2：播报 ---- */
 .dice-toast { border-color: var(--color-primary); }
-.dice-value { font-size: 20px; }
 .trip-tag {
   font-size: 12px;
   color: #e08c81;

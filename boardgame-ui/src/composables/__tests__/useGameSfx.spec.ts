@@ -87,6 +87,16 @@ describe('useGameSfx', () => {
     expect(ctx.oscillators).toHaveLength(1)
   })
 
+  it('掷骰是一串递减频率的脉冲，模拟弹跳减速', () => {
+    const sfx = useGameSfx()
+    sfx.play('dice')
+
+    expect(ctx.oscillators.length).toBeGreaterThan(3)
+    const firstFreq = ctx.oscillators[0].frequency.setValueAtTime.mock.calls[0][0]
+    const lastFreq = ctx.oscillators[ctx.oscillators.length - 1].frequency.setValueAtTime.mock.calls[0][0]
+    expect(lastFreq).toBeLessThan(firstFreq)
+  })
+
   it('静音后不再创建任何音频节点', () => {
     const sfx = useGameSfx()
     sfx.setMuted(true)

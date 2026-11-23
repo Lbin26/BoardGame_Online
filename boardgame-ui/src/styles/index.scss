@@ -125,3 +125,16 @@ body {
   font-size: 1.15em;
   line-height: 1;
 }
+
+/* 品牌 logo 随主题反色：透明底黑字稿，黑夜反相成白字、白天保持黑字。
+   invert 只动 RGB 不动 alpha，透明背景完整保留；logo 内蓝 #027EF8 与橙 #FD8107
+   互为 255 反色，因此反色时两个点缀色精确互换（不是近似色相偏移）。
+   默认按 dark 处理（项目默认黑夜），light 模式显式还原。 */
+.theme-logo {
+  filter: invert(1);
+  transition: filter 0.25s ease;
+}
+
+[data-theme='light'] .theme-logo {
+  filter: none;
+}

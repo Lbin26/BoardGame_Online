@@ -116,21 +116,39 @@ export function describeAction(
       return parts.length ? `拿走了 ${parts.join(' ')}` : '拿走了宝石'
     }
     case 'BUY_CARD':
-      return `购买了发展卡 ${d.cardId ?? '?'}（${d.source === 'reserved' ? '预留区' : '桌面'}）`
+      return `购买了${cardChinese(d)}（${d.source === 'reserved' ? '预留区' : '桌面'}）`
     case 'RESERVE_CARD':
       return d.cardId
-        ? `预留了明卡 ${d.cardId}${d.goldGained ? '，获得 1 黄金' : ''}`
-        : `盲留了 ${d.level ?? '?'} 级牌堆顶${d.goldGained ? '，获得 1 黄金' : ''}`
+        ? `预留了明卡${cardChinese(d)}${d.goldGained ? '，获得 1 黄金' : ''}`
+        : `盲留了 ${levelChinese(d.level)}牌堆顶${d.goldGained ? '，获得 1 黄金' : ''}`
     case 'DISCARD_GEMS': {
       const parts = Object.entries(d.discarded ?? {})
         .map(([c, n]) => `${COLOR_LABELS[c as AnyColor] ?? c}×${n}`)
       return parts.length ? `弃掉了 ${parts.join(' ')}` : '弃掉了宝石'
     }
     case 'NOBLE_SELECT':
-      return `拜访了贵族 ${d.nobleId ?? '?'}（+${d.vp ?? 0} 声望）`
+      return `拜访了贵族 ${d.nobleName ?? d.nobleId ?? '?'}（+${d.vp ?? 0} 声望）`
     default:
       return action
   }
+}
+
+/** 等级数字 → 中文序数（三级发展卡） */
+function levelChinese(level: unknown): string {
+  const map: Record<number, string> = { 1: '一级', 2: '二级', 3: '三级' }
+  return typeof level === 'number' ? (map[level] ?? `${level} 级`) : '某级'
+}
+
+/** 卡牌 detail → 可读中文：「二级蓝卡（+3 声望）」；缺新字段的旧对局回退到 cardId */
+function cardChinese(d: Record<string, any>): string {
+  const hasChineseInfo = d.level != null || d.bonus != null
+  if (!hasChineseInfo) {
+    return `发展卡${d.cardId ? ` ${d.cardId}` : ''}` + (d.vp != null ? `（+${d.vp} 声望）` : '')
+  }
+  const level = levelChinese(d.level)
+  const bonus = typeof d.bonus === 'string' ? COLOR_LABELS[d.bonus as AnyColor] ?? d.bonus : ''
+  const color = bonus ? `${bonus}卡` : '发展卡'
+  return `${level}${color}` + (d.vp != null ? `（+${d.vp} 声望）` : '')
 }
 
 /** 待办阶段文案（快照 pendingType：公开字段） */

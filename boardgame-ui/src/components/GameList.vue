@@ -4,8 +4,13 @@ import { POSTER_GAME_KEYS } from '@/constants/catalog'
 import { ZONE_SEALS } from '@/constants/zoneSeals'
 import { findRuleBook } from '@/constants/rules'
 
-defineProps<{ zone: Zone; games: Game[] }>()
+const props = defineProps<{ zone: Zone; games: Game[]; newKeys?: Set<string> }>()
 defineEmits<{ select: [gameKey: string]; rules: [gameKey: string] }>()
+
+/** 后端 game_definition.create_time 判定出的近期新游戏 */
+function isNew(game: Game): boolean {
+  return props.newKeys?.has(game.key) ?? false
+}
 
 /** 海报剪影：文件名直接用 game.key，未登记的游戏不铺背景 */
 function entryStyle(game: Game, i: number): Record<string, string | number> {
@@ -38,7 +43,10 @@ function entryStyle(game: Game, i: number): Record<string, string | number> {
         :style="entryStyle(game, i)"
         @click="game.playable && $emit('select', game.key)"
       >
-        <span class="g-name">{{ game.name }}</span>
+        <span class="g-title">
+          <span class="g-name">{{ game.name }}</span>
+          <span v-if="isNew(game)" class="new-badge">NEW</span>
+        </span>
         <span class="g-desc">{{ game.desc }}</span>
         <span class="g-meta">
           <span v-if="game.players" class="g-players">{{ game.players }} 人</span>
@@ -198,10 +206,31 @@ function entryStyle(game: Game, i: number): Record<string, string | number> {
 button.game-entry {
   cursor: pointer;
 }
+.g-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 9em;
+}
 .g-name {
   font-family: var(--font-display);
   font-size: 22px;
-  min-width: 9em;
+}
+.new-badge {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.5;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e0512b;
+  box-shadow: 0 2px 8px rgba(224, 81, 43, 0.3);
+}
+.has-poster .new-badge {
+  border: 1px solid rgba(255, 255, 255, 0.7);
 }
 .g-desc {
   color: var(--muted);
@@ -269,7 +298,7 @@ button.game-entry {
   padding: 2px 9px;
 }
 @media (max-width: 700px) {
-  .g-name {
+  .g-title {
     min-width: 0;
   }
 }

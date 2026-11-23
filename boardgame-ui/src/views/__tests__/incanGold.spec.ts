@@ -136,8 +136,8 @@ describe('印加宝藏对局页', () => {
 
     expect(w.text()).toContain('第 2 / 5 轮')
     expect(w.text()).toContain('神庙桌面')
-    expect(w.text()).toContain('10 · 余数 1')
-    expect(w.text()).toContain('4 · 余数 0')
+    expect(w.text()).toContain('10 · 剩余 1')
+    expect(w.text()).toContain('4 · 剩余 0')
     const choices = w.findAll('.choice')
     expect(choices.length).toBe(2)
     await choices[1].trigger('click')

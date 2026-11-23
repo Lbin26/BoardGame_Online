@@ -1,0 +1,43 @@
+# 服务器本地覆盖配置模板
+# 使用：cp 到 /opt/dicego/config/application-prod.yml 后按实际情况修改。
+# 注意：这个文件不要提交到 Git，密码只留在服务器上。
+
+server:
+  port: 8080
+
+spring:
+  # 覆盖项目自带的 /ruoyi/server/temp（那是 Docker 镜像内的路径），否则 dicego 用户无权限创建
+  servlet:
+    multipart:
+      location: /opt/dicego/server/temp
+  datasource:
+    dynamic:
+      datasource:
+        master:
+          driverClassName: com.mysql.cj.jdbc.Driver
+          # 库名保持 boardgame_online：ry_vue.sql（系统表）+ boardgame_online.sql（游戏表）导入同一个库
+          url: jdbc:mysql://127.0.0.1:3306/boardgame_online?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
+          username: dicego
+          password: CHANGE_ME_DB_PASSWORD
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      password: CHANGE_ME_REDIS_PASSWORD
+      timeout: 10s
+
+# 生产环境必须替换，且长度不要太短
+sa-token:
+  jwt-secret-key: CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+
+# 前端对外访问地址（第三方登录回调用；没有用到可以保留 localhost）
+justauth:
+  address: http://YOUR_SERVER_IP
+
+# 建议收紧：只暴露健康检查，不暴露全部端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

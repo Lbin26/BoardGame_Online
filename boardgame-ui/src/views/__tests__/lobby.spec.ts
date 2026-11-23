@@ -56,6 +56,10 @@ const mocks = vi.hoisted(() => ({
   match: {
     getRecentMatches: vi.fn(async () => ({ success: true, matches: [] as any[] })),
   },
+  // 游戏目录只决定 NEW 标，默认无新游戏
+  game: {
+    getGameDefinitions: vi.fn(async () => ({ success: true, games: [] as any[] })),
+  },
 }))
 
 vi.mock('vue-router', () => ({
@@ -70,6 +74,7 @@ vi.mock('@/api/magicalAthlete', () => mocks.ma)
 vi.mock('@/api/incanGold', () => mocks.incanGold)
 vi.mock('@/api/online', () => mocks.online)
 vi.mock('@/api/match', () => mocks.match)
+vi.mock('@/api/game', () => mocks.game)
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)

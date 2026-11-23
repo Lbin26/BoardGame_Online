@@ -1,3 +1,11 @@
+# DiceGo 应用版本号（Maven 资源过滤替换 revision），用于版本更新自动通知
+dicego:
+  version: ${project.version}
+  match:
+    cleanup:
+      # 对局记录保留时长：超过此时长的对局由定时任务清理（默认 1 小时）
+      max-age-hours: 1
+
 # 开发环境配置
 server:
   # 服务器的HTTP端口，默认为8080
@@ -121,6 +129,8 @@ security:
     - /ws/incan-gold/**
     # 平台在线人数（只读统计，允许未登录查看）
     - /api/online
+    # 游戏定义目录（大厅 NEW 图标所需，只读，允许未登录查看）
+    - /api/dicego/games
 
 # MyBatisPlus配置
 # https://baomidou.com/config/
@@ -340,8 +350,8 @@ easy-es:
   global-config:
     # 开启控制台打印通过本框架生成的DSL语句,默认为开启,测试稳定后的生产环境建议关闭,以提升少量性能
     print-dsl: true
-    # 异步处理索引是否阻塞主线程 默认阻塞 数据量过大时调整为非阻塞异步进行 项目启动更快
-    asyncProcessIndexBlocking: true
+    # 异步处理索引是否阻塞主线程 默认阻塞；设为非阻塞异步进行，项目启动更快（本平台未用 ES，可安全关闭阻塞）
+    asyncProcessIndexBlocking: false
     db-config:
       # 是否开启下划线转驼峰 默认为false
       map-underscore-to-camel-case: true

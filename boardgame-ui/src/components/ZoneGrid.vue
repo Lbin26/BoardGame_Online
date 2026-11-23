@@ -3,8 +3,13 @@ import type { Zone } from '@/constants/catalog'
 import { gamesInZone } from '@/constants/catalog'
 import { ZONE_SEALS } from '@/constants/zoneSeals'
 
-defineProps<{ zones: Zone[] }>()
+const props = defineProps<{ zones: Zone[]; newKeys?: Set<string> }>()
 defineEmits<{ select: [zoneKey: string] }>()
+
+/** 分区内有新上线游戏时，在分区卡片上挂一个 NEW 标 */
+function zoneHasNew(zone: Zone): boolean {
+  return gamesInZone(zone.key).some((game) => props.newKeys?.has(game.key) ?? false)
+}
 
 /** 状态列：只报本区收录了几款游戏，可玩与否由卡片上的徽章表达 */
 function zoneStatus(zone: Zone): string {
@@ -31,6 +36,7 @@ function zoneStatus(zone: Zone): string {
       <span class="zone-name">
         <span class="zone-seal">{{ ZONE_SEALS[zone.key] ?? '桌' }}</span>
         {{ zone.name }}
+        <span v-if="zoneHasNew(zone)" class="new-badge">NEW</span>
       </span>
       <span class="zone-tags">
         <span v-for="m in zone.mechanisms" :key="m" class="zone-tag">{{ m }}</span>
@@ -96,6 +102,17 @@ function zoneStatus(zone: Zone): string {
   font-family: var(--font-display);
   font-size: 20px;
   line-height: 1.2;
+}
+.new-badge {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: #e0512b;
 }
 .zone-seal {
   width: 38px;

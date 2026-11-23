@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import {
-  countUnread,
   listAdminMessages,
   listMessages,
   markAdminMessageRead,
@@ -17,38 +16,61 @@ import {
 } from '@/api/inbox'
 import { isSuperAdmin } from '@/constants/admin'
 import { useUserStore } from '@/store/user'
+import { useSystemNotices } from '@/composables/useSystemNotices'
 
 const userStore = useUserStore()
 
 const userName = computed(() => userStore.userInfo?.userName ?? '')
 const nickName = computed(() => userStore.userInfo?.nickName ?? '')
 const admin = computed(() => isSuperAdmin(userName.value, nickName.value))
+const isLogin = computed(() => userStore.isLogin)
+
+// 系统通知（RuoYi 原生消息盒子 + 版本更新自动通知）
+const {
+  notices: systemNotices,
+  unread: systemUnread,
+  refresh: refreshNotices,
+  openNotice,
+  readAll: readAllNotices,
+  publish: publishNotice,
+} = useSystemNotices({ loggedIn: isLogin })
 
 const open = ref(false)
 const tab = ref<'inbox' | 'admin'>('inbox')
-const unread = ref(0)
 const messages = ref<InboxMessage[]>([])
 const adminMessages = ref<InboxMessage[]>([])
 const opinions = ref<Opinion[]>([])
+
+/** 总未读 = 系统通知 + 私信 + （管理员的）待查看意见 */
+const unread = computed(() => {
+  const personal = messages.value.filter((m) => !m.read).length
+  const opinionUnread = admin.value ? adminMessages.value.filter((m) => !m.read).length : 0
+  return systemUnread.value + personal + opinionUnread
+})
 
 const recipient = ref('')
 const draft = ref('')
 const sending = ref(false)
 
-function refresh(): void {
-  /** 普通用户看自身未读；管理员额外把待查看意见计入红点 */
-  const personal = countUnread(userName.value)
+// 管理员发布系统通知表单
+const noticeTitle = ref('')
+const noticeContent = ref('')
+const publishing = ref(false)
+
+function refreshLocal(): void {
   messages.value = listMessages(userName.value)
   if (admin.value) {
     adminMessages.value = listAdminMessages()
     opinions.value = listOpinions()
-    unread.value = personal + adminMessages.value.filter((m) => !m.read).length
-  } else {
-    unread.value = personal
   }
 }
 
-onMounted(refresh)
+function refresh(): void {
+  refreshLocal()
+  void refreshNotices()
+}
+
+onMounted(refreshLocal)
 
 /** 展开面板：同步未读列表；管理员默认落在通知页 */
 function toggle(): void {
@@ -60,13 +82,14 @@ function openMessage(message: InboxMessage): void {
   if (!message.read) {
     if (message.kind === 'opinion' && admin.value) markAdminMessageRead(message.id)
     else markMessageRead(message.id)
-    refresh()
+    refreshLocal()
   }
 }
 
 function readAll(): void {
   markAllRead(userName.value)
-  refresh()
+  readAllNotices()
+  refreshLocal()
 }
 
 async function handleSend(): Promise<void> {
@@ -85,20 +108,41 @@ async function handleSend(): Promise<void> {
     sendMessage(userName.value, nickName.value, to, content)
     draft.value = ''
     ElMessage.success('消息已发送')
-    refresh()
+    refreshLocal()
   } finally {
     sending.value = false
+  }
+}
+
+async function handlePublishNotice(): Promise<void> {
+  const title = noticeTitle.value.trim()
+  const content = noticeContent.value.trim()
+  if (!title || !content) {
+    ElMessage.warning('请填写通知标题和内容')
+    return
+  }
+  publishing.value = true
+  try {
+    await publishNotice(title, content)
+    noticeTitle.value = ''
+    noticeContent.value = ''
+    ElMessage.success('系统通知已发布给全体用户')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '发布失败')
+  } finally {
+    publishing.value = false
   }
 }
 
 function handleOpinion(opinion: Opinion): void {
   if (opinion.status === 0) {
     markOpinionHandled(opinion.id)
-    refresh()
+    refreshLocal()
   }
 }
 
 function formatTime(iso: string): string {
+  if (!iso) return ''
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -165,6 +209,24 @@ function kindLabel(kind: InboxMessage['kind']): string {
       <!-- 通知 / 发送 -->
       <template v-if="tab === 'inbox'">
         <div class="mail-list">
+          <!-- 系统通知（后端消息盒子：公告 + 版本更新） -->
+          <button
+            v-for="notice in systemNotices"
+            :key="'sys-' + notice.id"
+            type="button"
+            class="mail-item"
+            :class="{ unread: !notice.read }"
+            @click="openNotice(notice)"
+          >
+            <span class="mail-item-top">
+              <span class="mail-kind kind-system">系统</span>
+              <b>{{ notice.title }}</b>
+              <time>{{ formatTime(notice.createdAt) }}</time>
+            </span>
+            <span class="mail-item-body">{{ notice.content }}</span>
+            <span class="mail-item-from">来自 DiceGo 平台</span>
+          </button>
+          <!-- 私信（本地） -->
           <button
             v-for="message in messages"
             :key="message.id"
@@ -181,7 +243,7 @@ function kindLabel(kind: InboxMessage['kind']): string {
             <span class="mail-item-body">{{ message.content }}</span>
             <span class="mail-item-from">来自 {{ message.fromName }}</span>
           </button>
-          <p v-if="messages.length === 0" class="mail-empty">暂无消息</p>
+          <p v-if="systemNotices.length === 0 && messages.length === 0" class="mail-empty">暂无消息</p>
         </div>
 
         <div class="mail-all-read">
@@ -221,7 +283,27 @@ function kindLabel(kind: InboxMessage['kind']): string {
           </button>
           <p v-if="opinions.length === 0" class="mail-empty">暂无用户意见</p>
         </div>
-        <p class="admin-tip">管理员 {{ nickName || userName }} 可查看全部用户意见（含其他浏览器提交）。</p>
+
+        <form class="notice-compose" @submit.prevent="handlePublishNotice">
+          <p class="compose-title">发布系统通知</p>
+          <input
+            v-model="noticeTitle"
+            type="text"
+            placeholder="通知标题（如：版本更新）"
+            maxlength="50"
+            autocomplete="off"
+          />
+          <textarea
+            v-model="noticeContent"
+            placeholder="通知内容，将推送给全体用户…"
+            maxlength="1000"
+            rows="3"
+          ></textarea>
+          <button type="submit" class="compose-send" :disabled="publishing">
+            {{ publishing ? '发布中…' : '发布给全体用户' }}
+          </button>
+        </form>
+        <p class="admin-tip">管理员 {{ nickName || userName }} 可查看全部用户意见，并向全体用户发布系统通知。</p>
       </template>
     </div>
   </div>
@@ -408,7 +490,8 @@ function kindLabel(kind: InboxMessage['kind']): string {
     cursor: default;
   }
 }
-.mail-compose {
+.mail-compose,
+.notice-compose {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -421,7 +504,9 @@ function kindLabel(kind: InboxMessage['kind']): string {
   font-weight: 600;
 }
 .mail-compose input,
-.mail-compose textarea {
+.mail-compose textarea,
+.notice-compose input,
+.notice-compose textarea {
   width: 100%;
   box-sizing: border-box;
   background: var(--input-bg);

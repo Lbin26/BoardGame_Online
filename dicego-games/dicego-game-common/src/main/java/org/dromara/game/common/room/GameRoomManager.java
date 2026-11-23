@@ -24,6 +24,8 @@ public class GameRoomManager<T extends GameRoom> {
     private static final long WAITING_GRACE_MS = TimeUnit.SECONDS.toMillis(30);
     private static final long PLAYING_ABANDON_MS = TimeUnit.SECONDS.toMillis(120);
     private static final long FINISHED_TTL_MS = TimeUnit.SECONDS.toMillis(60);
+    /** 房间绝对寿命：1 小时。到点无论是否有人在线、是否在活动都关闭，避免僵尸对局常驻 */
+    private static final long MAX_ROOM_AGE_MS = TimeUnit.HOURS.toMillis(1);
     private static final long CLEANUP_INTERVAL_SEC = 15;
 
     private final ConcurrentHashMap<String, T> rooms = new ConcurrentHashMap<>();
@@ -117,6 +119,12 @@ public class GameRoomManager<T extends GameRoom> {
     void cleanup(long now) {
         int removed = 0;
         for (T room : rooms.values()) {
+            // 绝对寿命优先：超过 1 小时的房间一律关闭（含仍有人在线的情况），并广播 ROOM_CLOSED
+            if (now - room.getCreatedAt() > MAX_ROOM_AGE_MS) {
+                closeRoom(room.getRoomId(), "超过1小时");
+                removed++;
+                continue;
+            }
             // 全员待机优先：即使都还连着也关房（AFK 判定的兜底，主路径在 handler 收到 AFK 时立即触发）
             if (room.allParticipantsAfk()) {
                 closeRoom(room.getRoomId(), "全员待机");

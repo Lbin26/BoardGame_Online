@@ -36,6 +36,27 @@ class SplendorRoomTest {
     }
 
     @Test
+    void 同一用户多开多昵称只占一个真实座位_其余降级哨兵() {
+        // 回归：本机用一个账号开多个昵称，若都绑定同一 user_id，开局落库会撞
+        // uk_match_user(match_id,user_id) 唯一键并回滚整局。只有最早绑定的昵称保留真实 ID。
+        TestRecorder rec = new TestRecorder();
+        SplendorRoom room = new SplendorRoom("R1", "alice", 3, CACHE, rec);
+        room.takeSeat("alice", 1);
+        room.takeSeat("bob", 2);
+        room.takeSeat("carol", 3);
+        room.bindUser("alice", 777L);
+        room.bindUser("bob", 777L);    // 同一 user_id 第二昵称 → 拒绝
+        room.bindUser("carol", 777L);  // 第三昵称 → 拒绝
+
+        assertEquals(SplendorRoom.StartResult.SUCCESS, room.startGame("alice"));
+        assertEquals(List.of(
+            new org.dromara.dicego.service.SplendorPlayerRef(1, "alice", 777L),
+            new org.dromara.dicego.service.SplendorPlayerRef(2, "bob", -2L),
+            new org.dromara.dicego.service.SplendorPlayerRef(3, "carol", -3L)),
+            rec.starts.get(0).players());
+    }
+
+    @Test
     void 自动补位_升序入座() {
         SplendorRoom room = newRoom(4);
         assertEquals(SplendorRoom.SeatResult.SUCCESS, room.takeSeat("alice", null));

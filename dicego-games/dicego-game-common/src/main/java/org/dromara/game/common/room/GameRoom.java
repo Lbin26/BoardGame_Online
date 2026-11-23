@@ -27,6 +27,10 @@ public abstract class GameRoom {
     @Getter
     private volatile long lastActivityAt;
 
+    /** 建房时刻：超过 1 小时的房间无论是否在线都强制关闭，避免僵尸对局永久占用大厅 */
+    @Getter
+    private final long createdAt;
+
     /** 当前在线玩家名（含旁观者），用于清理宽限判定 */
     private final Set<String> connectedPlayers = ConcurrentHashMap.newKeySet();
 
@@ -41,7 +45,8 @@ public abstract class GameRoom {
         this.roomId = roomId;
         this.hostName = hostName;
         this.status = RoomStatus.WAITING;
-        this.lastActivityAt = System.currentTimeMillis();
+        this.createdAt = System.currentTimeMillis();
+        this.lastActivityAt = this.createdAt;
     }
 
     protected void touch() {

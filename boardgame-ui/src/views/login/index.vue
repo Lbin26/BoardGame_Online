@@ -92,7 +92,7 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div class="auth-page">
-    <img class="auth-logo" :src="logoWordmark" alt="DiceGo" />
+    <img class="auth-logo theme-logo" :src="logoWordmark" alt="DiceGo" />
     <el-card class="auth-card">
       <template #header>
         <h2 class="auth-title">登录</h2>

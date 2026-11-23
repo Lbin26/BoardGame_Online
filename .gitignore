@@ -60,3 +60,6 @@ application-ga.yml
 # Runtime uploads (avatars etc.)
 /dicego-data/
 
+# Local agent data (do not publish)
+/.workbuddy/
+

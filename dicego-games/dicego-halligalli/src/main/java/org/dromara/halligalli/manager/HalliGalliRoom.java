@@ -249,9 +249,17 @@ public class HalliGalliRoom extends GameRoom {
 
     /** 玩家名 ↔ sys_user.user_id 绑定（建房/入座时由 Controller 调用；未绑定为游客） */
     public synchronized void bindUser(String playerName, Long userId) {
-        if (playerName != null && userId != null && userId > 0) {
+        if (playerName == null || userId == null || userId <= 0) return;
+        // 同一真实用户一局只能占一个座位：本机多开会把多个昵称解析成同一个 user_id，
+        // 若照单全收会撞 game_match_player.uk_match_user(match_id,user_id) 唯一键并回滚整局落库。
+        if (userIdByName.containsKey(playerName)) {
             userIdByName.put(playerName, userId);
+            return;
         }
+        for (Map.Entry<String, Long> e : userIdByName.entrySet()) {
+            if (!e.getKey().equals(playerName) && userId.equals(e.getValue())) return;
+        }
+        userIdByName.put(playerName, userId);
     }
 
     /**

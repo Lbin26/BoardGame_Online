@@ -180,6 +180,9 @@ public final class SplendorEngine {
         detail.put("source", fromReserved ? "reserved" : "table");
         detail.put("paid", toWireMapWithGold(payment));
         detail.put("vp", card.vp());
+        // 战报可读字段（均为公开卡面信息，不含隐藏信息）：等级 / 加成色
+        detail.put("level", card.level());
+        detail.put("bonus", card.bonus().getCode());
         endTurn(board, actor);
         return ok(detail);
     }
@@ -233,7 +236,11 @@ public final class SplendorEngine {
         // 盲留不泄漏卡面（隐藏信息）；明卡预留的 cardId 本就公开
         if ("table".equals(source)) {
             detail.put("cardId", cardId);
+            // 明卡预留：卡面公开，补充等级/加成色供战报中文化
+            detail.put("level", card.level());
+            detail.put("bonus", card.bonus().getCode());
         } else {
+            // 盲留不泄漏卡面，等级仅表示牌堆层级，可安全公开
             detail.put("level", level);
         }
         detail.put("source", source);
@@ -308,6 +315,7 @@ public final class SplendorEngine {
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("nobleId", nobleId);
+        detail.put("nobleName", noble.name());
         detail.put("vp", noble.vp());
         afterAction(board, actor);
         return ok(detail);
