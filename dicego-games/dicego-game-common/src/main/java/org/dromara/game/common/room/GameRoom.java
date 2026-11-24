@@ -53,6 +53,15 @@ public abstract class GameRoom {
         this.lastActivityAt = System.currentTimeMillis();
     }
 
+    /**
+     * 标记为已关闭：关房回调与广播发出前先落状态，
+     * 让「全员待机」等主动关房与正常打完的 FINISHED 明确区分。
+     */
+    public synchronized void close() {
+        this.status = RoomStatus.CLOSED;
+        touch();
+    }
+
     public synchronized void markConnected(String playerName, boolean connected) {
         if (connected) {
             connectedPlayers.add(playerName);

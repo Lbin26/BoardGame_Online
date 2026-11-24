@@ -1,10 +1,15 @@
 package org.dromara.game.common.match.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.game.common.match.entity.GameMatchEntity;
 import org.dromara.game.common.match.entity.GameMatchPlayerEntity;
 import org.dromara.game.common.match.mapper.GameMatchMapper;
 import org.dromara.game.common.match.mapper.GameMatchPlayerMapper;
 import org.dromara.game.common.match.vo.GameMatchRecentVO;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -19,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +42,14 @@ class GameMatchHistoryServiceTest {
 
     @InjectMocks
     private GameMatchHistoryService service;
+
+    /** 单元测试没有 Spring 上下文，手动初始化 MyBatis-Plus 的 Lambda 元数据缓存 */
+    @BeforeAll
+    static void initTableCache() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, GameMatchEntity.class);
+        TableInfoHelper.initTableInfo(assistant, GameMatchPlayerEntity.class);
+    }
 
     private static GameMatchPlayerEntity playerRow(long matchId, int seatNo, int rank, int score, String winFlag) {
         GameMatchPlayerEntity row = new GameMatchPlayerEntity();
@@ -74,7 +88,7 @@ class GameMatchHistoryServiceTest {
         when(matchPlayerMapper.selectList(any())).thenReturn(List.of(
             playerRow(2L, 2, 2, 31, "0"),
             playerRow(1L, 1, 1, 45, "1")));
-        when(matchMapper.selectByIds(any())).thenReturn(List.of(
+        when(matchMapper.selectList(any())).thenReturn(List.of(
             match(1L, "halli_galli", "2"),
             match(2L, "splendor", "2")));
 
@@ -101,12 +115,27 @@ class GameMatchHistoryServiceTest {
         when(matchPlayerMapper.selectList(any())).thenReturn(List.of(
             playerRow(9L, 1, 1, 20, "1"),
             playerRow(1L, 2, 1, 30, "1")));
-        when(matchMapper.selectByIds(any())).thenReturn(List.of(match(1L, "xiangqi", "2")));
+        when(matchMapper.selectList(any())).thenReturn(List.of(match(1L, "xiangqi", "2")));
 
         List<GameMatchRecentVO> list = service.recent(1001L, 10);
 
         assertEquals(1, list.size());
         assertEquals("xiangqi", list.get(0).gameCode());
+    }
+
+    @Test
+    void 查询只取未逻辑删除的记录() {
+        when(matchPlayerMapper.selectList(any())).thenReturn(List.of());
+
+        service.recent(1001L, 5);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<GameMatchPlayerEntity>> captor =
+            ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(matchPlayerMapper).selectList(captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertTrue(sql.contains("del_flag = #{ew.paramNameValuePairs"), sql);
+        assertTrue(sql.contains("limit 5"), sql);
     }
 
     @Test

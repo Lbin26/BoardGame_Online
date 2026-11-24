@@ -10,3 +10,13 @@ export interface OnlineCountData {
 export function getOnlineCount(): Promise<OnlineCountData> {
   return rawRequest.get('/api/online')
 }
+
+/** 大厅心跳：告诉后端"我还在线"，与房间 WS 连接合并计人数 */
+export async function pingOnline(playerName: string): Promise<void> {
+  await rawRequest.post('/api/online/ping', { playerName })
+}
+
+/** 主动下线：退出登录/关页/进入待机时立即清除心跳，不必等后端超时 */
+export async function leaveOnline(playerName: string): Promise<void> {
+  await rawRequest.post('/api/online/leave', { playerName })
+}

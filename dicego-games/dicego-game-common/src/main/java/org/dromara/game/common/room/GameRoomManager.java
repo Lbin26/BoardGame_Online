@@ -51,6 +51,8 @@ public class GameRoomManager<T extends GameRoom> {
     public boolean closeRoom(String roomId, String reason) {
         T removed = rooms.remove(roomId);
         if (removed == null) return false;
+        // 先落 CLOSED 状态，再广播 ROOM_CLOSED；对外语义是「已关闭」而非「已结束」
+        removed.close();
         roomCloseListener.accept(roomId, reason);
         log.info("房间关闭: {} ({})", roomId, reason);
         return true;
@@ -136,11 +138,10 @@ public class GameRoomManager<T extends GameRoom> {
             long grace = switch (room.getStatus()) {
                 case WAITING -> WAITING_GRACE_MS;
                 case PLAYING -> PLAYING_ABANDON_MS;
-                case FINISHED -> FINISHED_TTL_MS;
+                case FINISHED, CLOSED -> FINISHED_TTL_MS;
             };
             if (idle > grace) {
-                rooms.remove(room.getRoomId());
-                log.info("房间清理: {} ({} 无人在线超宽限)", room.getRoomId(), room.getStatus());
+                closeRoom(room.getRoomId(), "无人在线超时");
                 removed++;
             }
         }

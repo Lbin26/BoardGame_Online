@@ -26,11 +26,15 @@ CREATE TABLE `game_definition`
     `id`           bigint       NOT NULL COMMENT '主键',
     `game_code`    varchar(32)  NOT NULL COMMENT '游戏编码，如 splendor',
     `game_name`    varchar(64)  NOT NULL COMMENT '游戏名称，如 宝石商人',
+    `zone_code`    varchar(32)           DEFAULT NULL COMMENT '大厅分区编码（party/card/...）',
+    `playable`     char(1)      NOT NULL DEFAULT '0' COMMENT '是否可玩（0否 1是），大厅据此生成房间入口',
     `min_players`  tinyint      NOT NULL DEFAULT '2' COMMENT '最少开局人数',
     `max_players`  tinyint      NOT NULL DEFAULT '4' COMMENT '最多开局人数',
     `rule_version` varchar(16)  NOT NULL DEFAULT '1.0' COMMENT '规则版本号',
     `icon`         varchar(255)         DEFAULT NULL COMMENT '游戏图标路径（大厅展示）',
     `description`  varchar(500)         DEFAULT NULL COMMENT '游戏简介（大厅展示）',
+    `mechanisms`   varchar(255)         DEFAULT NULL COMMENT '机制标签，逗号分隔（大厅展示）',
+    `story`        varchar(1000)        DEFAULT NULL COMMENT '房间层背景故事',
     `sort_no`      int          NOT NULL DEFAULT '0' COMMENT '排序号（越小越靠前）',
     `status`       char(1)               DEFAULT '0' COMMENT '状态（0正常 1停用）',
     `del_flag`     char(1)               DEFAULT '0' COMMENT '删除标志（0存在 1删除）',
@@ -110,10 +114,12 @@ CREATE TABLE `game_match`
     `create_time`   datetime              DEFAULT NULL COMMENT '创建时间',
     `update_by`     bigint                DEFAULT NULL COMMENT '更新者',
     `update_time`   datetime              DEFAULT NULL COMMENT '更新时间',
+    `del_flag`      char(1)               NOT NULL DEFAULT '0' COMMENT '删除标志（0存在 1删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_match_no` (`match_no`),
     KEY `idx_match_room` (`room_no`),
-    KEY `idx_match_status` (`match_status`)
+    KEY `idx_match_status` (`match_status`),
+    KEY `idx_match_del` (`del_flag`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '对局表';
 
 -- 1.5 对局玩家战绩表
@@ -134,9 +140,11 @@ CREATE TABLE `game_match_player`
     `create_time` datetime         DEFAULT NULL COMMENT '创建时间',
     `update_by`   bigint           DEFAULT NULL COMMENT '更新者',
     `update_time` datetime         DEFAULT NULL COMMENT '更新时间',
+    `del_flag`    char(1) NOT NULL DEFAULT '0' COMMENT '删除标志（0存在 1删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_match_user` (`match_id`, `user_id`),
-    KEY `idx_mplayer_user` (`user_id`)
+    KEY `idx_mplayer_user` (`user_id`),
+    KEY `idx_mplayer_del` (`del_flag`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '对局玩家战绩表';
 
 -- 1.6 玩家战绩统计表
@@ -173,9 +181,11 @@ CREATE TABLE `game_action_log`
     `action_params` varchar(1000)          DEFAULT NULL COMMENT '动作参数 JSON',
     `state_version` int           NOT NULL DEFAULT '0' COMMENT '动作执行后的状态版本号',
     `execute_time`  datetime      NOT NULL COMMENT '服务端执行时间',
+    `del_flag`      char(1)       NOT NULL DEFAULT '0' COMMENT '删除标志（0存在 1删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_match_action` (`match_id`, `action_id`),
-    KEY `idx_match_round` (`match_id`, `round_no`)
+    KEY `idx_match_round` (`match_id`, `round_no`),
+    KEY `idx_action_del` (`del_flag`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '对局行动日志表（只追加）';
 
 -- ============================================================
@@ -234,12 +244,51 @@ CREATE TABLE `splendor_noble`
 -- ============================================================
 
 -- 3.1 桌游总表（id 固定，业务代码/房间表以 game_code 关联而非 id）
-INSERT INTO `game_definition` (`id`, `game_code`, `game_name`, `min_players`, `max_players`, `rule_version`, `icon`, `description`, `sort_no`, `status`, `create_time`)
-VALUES (1, 'splendor', '宝石商人', 2, 4, '1.0', NULL, '引擎构建+成套收集：拿宝石、买发展卡、赢贵族拜访，率先达到15声望。', 1, '0', NOW()),
-       (2, 'xiangqi', '中国象棋', 2, 2, '1.0', NULL, '双人传统棋类对弈，支持悔棋、认输、重开。', 2, '0', NOW()),
-       (3, 'halli_galli', '德国心脏病', 2, 6, '1.0', NULL, '反应类实时对战：同种水果恰好5个时抢铃，抢错赔牌，牌多者胜。', 3, '0', NOW()),
-       (4, 'magical_athlete', '胡闹运动会', 2, 6, '1.0', NULL, '轮抽+掷骰竞速：蛇形选4名选手，四场比赛各派1名，靠能力与骰点抢奖牌，总分最高胜。', 4, '0', NOW()),
-       (5, 'incan_gold', '印加宝藏', 3, 8, '1.0', '/posters/incanGold.webp', '见好就收的探险博弈：5 轮翻牌，宝石平分余数留牌，同种灾难再现即团灭，独走者可收走神器。', 5, '0', NOW());
+INSERT INTO `game_definition`
+    (`id`, `game_code`, `game_name`, `min_players`, `max_players`, `rule_version`,
+     `icon`, `description`, `zone_code`, `playable`, `mechanisms`, `story`,
+     `sort_no`, `status`, `create_time`)
+VALUES
+    (1, 'splendor', '璀璨宝石 Splendor', 2, 4, '1.0', '/posters/splendor.webp',
+     '引擎构建 · 成套收集 · 2-4 人', 'card', '1', '引擎构建,成套收集',
+     '文艺复兴的城邦里，宝石商人争相囤积矿脉、延请工匠、结交贵族。谁先把有限的宝石变成源源不断产出声望的商业帝国，谁就赢得这座城市。',
+     1, '0', NOW()),
+    (2, 'xiangqi', '象棋', 2, 2, '1.0', NULL,
+     '楚河汉界，运筹帷幄', 'abstract', '1', NULL,
+     '楚河汉界之间，车马炮列阵以待。千年攻守浓缩在方寸棋盘上，读透对手的意图，比对手多算一步，就是胜利。',
+     2, '0', NOW()),
+    (3, 'halli_galli', '德国心脏病 Halli Galli', 2, 6, '1.0', '/posters/halliGalli.webp',
+     '反应 · 同时行动 · 2-6 人', 'party', '1', '反应,同时行动',
+     '果香四溢的牌堆一张接一张翻开，五枚相同水果一出现，铃声就是号令。比眼睛更快、比手更稳的人，才能把整桌牌收进怀里。',
+     3, '0', NOW()),
+    (4, 'magical_athlete', '胡闹运动会 Magical Athlete', 2, 6, '1.0', '/posters/magicalAthlete.webp',
+     '轮抽 · 掷骰竞速 · 角色能力 · 2-6 人', 'party', '1', '轮抽,骰子,角色能力',
+     '一群性格古怪的选手踏上三十格赛道：香蕉绊人、飞艇传送、倒霉蛋垫底也要加分。轮抽出场阵容，在混乱与笑料里抢下金牌。',
+     4, '0', NOW()),
+    (5, 'incan_gold', '印加宝藏 Diamant', 3, 8, '1.0', '/posters/incanGold.webp',
+     '推运气 · 探险收集 · 3-8 人', 'party', '1', '推运气,探险收集',
+     '手电照亮神庙深处，宝石在火光里闪烁，蛇、蜘蛛与毒气却潜伏在下一张牌后。是见好就收带着宝石撤退，还是再赌一把深入宝藏？贪婪与恐惧只在一步之间。',
+     5, '0', NOW()),
+    (6, 'go', '围棋', 2, 2, '1.0', NULL,
+     '敬请期待', 'abstract', '0', NULL,
+     '黑白子落下，格局随之生长。围地与侵消之间，最简单的规则孕育出最深的算度。',
+     6, '0', '2026-11-01 00:00:00'),
+    (7, 'gomoku', '五子棋', 2, 2, '1.0', NULL,
+     '敬请期待', 'abstract', '0', NULL,
+     '五子连珠，攻守瞬息易位。看似简单的横线，考验的是藏在日常里的先见之明。',
+     7, '0', '2026-11-01 00:00:00'),
+    (8, 'dice_throne', '王权骰铸 Dice Throne', 2, 4, '1.0', '/posters/diceThrone.webp',
+     '敬请期待', 'narrative', '0', '骰子驱动,角色能力（不对称）,卡牌辅助',
+     '英雄各持一枚命运之骰，组合出专属战技。掷出的点数既是武器，也是需要管理人品与风险的赌注。',
+     8, '0', '2026-11-01 00:00:00'),
+    (9, 'avalon', '阿瓦隆 Avalon', 5, 10, '1.0', '/posters/avalon.webp',
+     '敬请期待', 'narrative', '0', '隐藏身份,推理/演绎,投票',
+     '圆桌之上，忠诚与叛逆同席而坐。任务成败取决于你信谁、不信谁——而最危险的那个人，往往就坐在你身边。',
+     9, '0', '2026-11-01 00:00:00'),
+    (10, 'brass', '伯明翰 Brass: Birmingham', 2, 4, '1.0', '/posters/brass.webp',
+     '敬请期待', 'strategy', '0', '网络构建,经济/资源管理,手牌管理（轻卡驱）',
+     '蒸汽与焦炭推动伯明翰的运河和铁路。建厂、铺轨、运煤、卖酒，在两个时代的产业浪潮里把小作坊经营成城市命脉。',
+     10, '0', '2026-11-01 00:00:00');
 
 -- 3.2/3.3 Splendor 卡牌与贵族种子由 design/games/splendor/game.yaml 生成（见文件头说明）
 -- 3.2 宝石商人-发展卡种子（90 张，由 game.yaml 生成，勿手改）

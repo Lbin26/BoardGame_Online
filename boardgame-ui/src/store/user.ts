@@ -14,6 +14,8 @@ export const useUserStore = defineStore('user', () => {
   const token = ref(getToken() ?? '')
   /** 当前登录用户信息 */
   const userInfo = ref<UserInfo | null>(null)
+  /** 当前用户的角色组（来自 profile 接口，逗号分隔的角色名；超管判定依据） */
+  const roleGroup = ref('')
 
   /** 是否已登录（令牌非空） */
   const isLogin = computed(() => token.value !== '')
@@ -30,6 +32,7 @@ export const useUserStore = defineStore('user', () => {
   async function fetchProfile(): Promise<void> {
     const data = await userApi.getProfile()
     userInfo.value = data.user
+    roleGroup.value = data.roleGroup ?? ''
   }
 
   /** 退出登录：调登出接口（忽略错误），清理本地状态并跳登录页 */
@@ -42,8 +45,9 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem(TOKEN_KEY)
     token.value = ''
     userInfo.value = null
+    roleGroup.value = ''
     router.push('/login')
   }
 
-  return { token, userInfo, isLogin, login, fetchProfile, logout }
+  return { token, userInfo, roleGroup, isLogin, login, fetchProfile, logout }
 })

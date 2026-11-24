@@ -2,6 +2,7 @@ package org.dromara.magicalathlete.handler;
 
 import org.dromara.game.common.room.GameRoomManager;
 import org.dromara.magicalathlete.manager.MagicalAthleteRoom;
+import org.dromara.magicalathlete.service.MagicalAthleteMatchRecorder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -38,7 +39,7 @@ class MagicalAthleteWebSocketHandlerTest {
     @BeforeEach
     void setUp() throws Exception {
         roomManager = new GameRoomManager<>(id -> new MagicalAthleteRoom(id, "alice", 2));
-        handler = new MagicalAthleteWebSocketHandler(roomManager);
+        handler = new MagicalAthleteWebSocketHandler(roomManager, mock(MagicalAthleteMatchRecorder.class));
         room = roomManager.createRoom("alice");
         alice = session("alice");
         bob = session("bob");
@@ -181,7 +182,8 @@ class MagicalAthleteWebSocketHandlerTest {
     void startGameVariantIsReadFromPayload() throws Exception {
         GameRoomManager<MagicalAthleteRoom> mgr =
             new GameRoomManager<>(id -> new MagicalAthleteRoom(id, "alice", 3));
-        MagicalAthleteWebSocketHandler h = new MagicalAthleteWebSocketHandler(mgr);
+        MagicalAthleteWebSocketHandler h = new MagicalAthleteWebSocketHandler(
+            mgr, mock(MagicalAthleteMatchRecorder.class));
         MagicalAthleteRoom r = mgr.createRoom("alice");
         WebSocketSession a = session(r, "alice");
         WebSocketSession b = session(r, "bob");

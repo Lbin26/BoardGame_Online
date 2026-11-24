@@ -18,7 +18,8 @@ import java.util.Map;
  * 个人战绩查询（全游戏共用）：按 game_match_player.user_id 取最近对局，再补 game_match 概要。
  *
  * <p>两条 SQL 即可完成（不需要 XML）：先按主键倒序取玩家行（雪花 ID 递增 ≈ 时间倒序），
- * 再批量取对局主体；对局已被清理时该行直接跳过，不抛异常。
+ * 再批量取对局主体；三表均为逻辑删除，查询只取 del_flag=0 的活跃记录，
+ * 对局已被清理（标记删除）时该行直接跳过，不抛异常。
  */
 @Service
 @RequiredArgsConstructor
@@ -37,13 +38,16 @@ public class GameMatchHistoryService {
         List<GameMatchPlayerEntity> rows = matchPlayerMapper.selectList(
             new LambdaQueryWrapper<GameMatchPlayerEntity>()
                 .eq(GameMatchPlayerEntity::getUserId, userId)
+                .eq(GameMatchPlayerEntity::getDelFlag, "0")
                 .orderByDesc(GameMatchPlayerEntity::getId)
                 .last("limit " + size));
         if (rows.isEmpty()) return List.of();
 
         List<Long> matchIds = rows.stream().map(GameMatchPlayerEntity::getMatchId).distinct().toList();
         Map<Long, GameMatchEntity> matches = new HashMap<>();
-        for (GameMatchEntity match : matchMapper.selectByIds(matchIds)) {
+        for (GameMatchEntity match : matchMapper.selectList(new LambdaQueryWrapper<GameMatchEntity>()
+            .in(GameMatchEntity::getId, matchIds)
+            .eq(GameMatchEntity::getDelFlag, "0"))) {
             matches.put(match.getId(), match);
         }
 

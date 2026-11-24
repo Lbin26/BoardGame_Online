@@ -5,14 +5,17 @@ export const NEW_GAME_DAYS = 14
 
 const DAY_MS = 86_400_000
 
-/** game_code → 前端 catalog key 的例外映射（库里的编码与目录 key 不一致时使用） */
-const KEY_ALIASES: Record<string, string> = {
-  xiangqi: 'chess',
-}
+/** game_code → 前端 catalog key 的例外映射（目前无例外；xiangqi 两边同名） */
+const KEY_ALIASES: Record<string, string> = {}
 
 /** game_code（下划线）→ 前端 catalog key（驼峰），如 incan_gold → incanGold */
 export function gameCodeToKey(gameCode: string): string {
   return KEY_ALIASES[gameCode] ?? gameCode.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+}
+
+/** 前端 catalog key → game_code（测试夹具与反向查询用），如 halliGalli → halli_galli */
+export function gameKeyToCode(key: string): string {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
 }
 
 /** 兼容 "yyyy-MM-dd HH:mm:ss" 与 ISO 两种时间格式 */

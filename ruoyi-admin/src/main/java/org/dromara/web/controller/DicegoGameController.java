@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 游戏定义目录（只读、公开）：前端按 create_time 给最近上线的游戏打 NEW 标。
+ * 游戏定义目录（只读、公开）：大厅游戏列表的唯一数据源，前端另按 create_time 打 NEW 标。
  */
 @Slf4j
 @RestController

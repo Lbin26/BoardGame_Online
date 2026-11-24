@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ElementPlus, { ElMessage } from 'element-plus'
 
 import Lobby from '@/views/lobby/index.vue'
+import type { GameDefinition } from '@/api/game'
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -51,6 +53,21 @@ const mocks = vi.hoisted(() => ({
   // 在线人数是装饰性信息：给默认成功实现，避免各 describe 挂载时产生未处理 rejection
   online: {
     getOnlineCount: vi.fn(async () => ({ success: true, onlineCount: 7 })),
+    pingOnline: vi.fn(async () => {}),
+    leaveOnline: vi.fn(async () => {}),
+  },
+  notice: {
+    notices: [] as any[],
+    unread: 0,
+    refresh: vi.fn(async () => {}),
+    openNotice: vi.fn(),
+    readAll: vi.fn(),
+    publish: vi.fn(async () => {}),
+    startPolling: vi.fn(),
+    stopPolling: vi.fn(),
+    isNoticeRead: vi.fn(() => false),
+    lastError: '',
+    loading: false,
   },
   // 战绩栏同样只做装饰展示，默认空列表
   match: {
@@ -73,8 +90,15 @@ vi.mock('@/api/halliGalli', () => mocks.hg)
 vi.mock('@/api/magicalAthlete', () => mocks.ma)
 vi.mock('@/api/incanGold', () => mocks.incanGold)
 vi.mock('@/api/online', () => mocks.online)
+vi.mock('@/composables/useSystemNotices', () => ({
+  useSystemNotices: () => ({ ...mocks.notice, notices: ref(mocks.notice.notices) }),
+}))
 vi.mock('@/api/match', () => mocks.match)
-vi.mock('@/api/game', () => mocks.game)
+// 保留真实 toCatalogGames，只替换网络请求
+vi.mock('@/api/game', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/game')>()),
+  ...mocks.game,
+}))
 
 // vi.hoisted 工厂先于 import 执行，不能在其中调用 vue 的 reactive；导入后再包一层
 mocks.route = reactive(mocks.route)
@@ -270,6 +294,7 @@ describe('lobby logout', () => {
     expect(wrapper.text()).toContain('alice')
     await buttonByText(wrapper, '退出登录')!.trigger('click')
     expect(mocks.store.logout).toHaveBeenCalledTimes(1)
+    expect(mocks.online.leaveOnline).toHaveBeenCalledWith('alice')
   })
 })
 
@@ -294,6 +319,21 @@ describe('lobby levels', () => {
     await flushPromises()
     expect(w.findAll('.game-entry')).toHaveLength(3)
     expect(buttonByText(w, '创建房间')).toBeUndefined()
+  })
+
+  it('uses game_definition rows as the game list', async () => {
+    const definitions: GameDefinition[] = [
+      { gameCode: 'xiangqi', gameName: '库里象棋', zoneCode: 'abstract', playable: true,
+        description: '数据库来的简介', maxPlayers: 2, createTime: '2026-11-01 00:00:00' },
+      { gameCode: 'go', gameName: '库里围棋', zoneCode: 'abstract', playable: false,
+        description: '敬请期待', createTime: '2026-11-01 00:00:00' },
+    ]
+    mocks.game.getGameDefinitions.mockResolvedValueOnce({ success: true, games: definitions })
+    const w = mountLobby({ zone: 'abstract' })
+    await flushPromises()
+    expect(w.findAll('.game-entry')).toHaveLength(2)
+    expect(w.text()).toContain('库里象棋')
+    expect(w.text()).not.toContain('五子棋')
   })
 
   it('zone+game query shows the three room cards', async () => {
@@ -558,6 +598,42 @@ describe('大厅在线人数', () => {
     expect(errorSpy, '装饰性信息失败不应打断大厅').not.toHaveBeenCalled()
     errorSpy.mockRestore()
   })
+
+  it('10 分钟无操作进入待机：变暗并主动下线，任意操作后唤醒', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-11-24T10:00:00Z'))
+      const wrapper = mountLobby()
+      await flushPromises()
+      expect(wrapper.find('.standby-veil').exists()).toBe(false)
+
+      // 推进 11 分钟并触发轮询（10s 间隔）
+      vi.setSystemTime(new Date('2026-11-24T10:11:00Z'))
+      vi.advanceTimersByTime(11 * 60_000)
+      await flushPromises()
+      expect(wrapper.find('.standby-veil').exists()).toBe(true)
+      expect(wrapper.find('.standby-card').text()).toContain('待机中')
+      expect(mocks.online.leaveOnline).toHaveBeenCalledWith('alice')
+      const pingsBefore = mocks.online.pingOnline.mock.calls.length
+
+      // 用户动一下鼠标 → 唤醒，恢复心跳与人数刷新
+      document.dispatchEvent(new Event('pointerdown'))
+      await flushPromises()
+      expect(wrapper.find('.standby-veil').exists()).toBe(false)
+      expect(mocks.online.pingOnline.mock.calls.length).toBeGreaterThan(pingsBefore)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('关闭页面时主动下线，避免退出后仍被计数', async () => {
+    const wrapper = mountLobby()
+    await flushPromises()
+    window.dispatchEvent(new Event('pagehide'))
+    expect(mocks.online.leaveOnline).toHaveBeenCalledWith('alice')
+    wrapper.unmount()
+  })
 })
 
 describe('大厅消息栏与玩家战绩栏', () => {
@@ -570,7 +646,11 @@ describe('大厅消息栏与玩家战绩栏', () => {
     mocks.match.getRecentMatches.mockResolvedValue({ success: true, matches: [] })
   })
 
-  it('首屏左侧是房间号表单，右侧展示上新/更新/热门消息', async () => {
+  it('首屏左侧是房间号表单，右侧平台消息绑定系统通知', async () => {
+    mocks.notice.notices = [
+      { id: '1', kind: 'notice', title: '超管公告', content: '今晚维护', createdAt: '2026-11-24T10:00:00', read: false },
+      { id: '2', kind: 'version', title: '版本更新', content: '新增分区', createdAt: '2026-11-22T09:00:00', read: true },
+    ]
     const wrapper = mountLobby()
     await flushPromises()
 
@@ -585,11 +665,23 @@ describe('大厅消息栏与玩家战绩栏', () => {
 
     const news = wrapper.find('.news-panel')
     expect(news.exists()).toBe(true)
-    const text = news.text()
-    expect(text).toContain('上新')
-    expect(text).toContain('更新')
-    expect(text).toContain('热门')
-    expect(news.findAll('.news-item')).toHaveLength(4)
+    const items = news.findAll('.news-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].text()).toContain('公告')
+    expect(items[0].text()).toContain('超管公告')
+    expect(items[0].text()).toContain('今晚维护')
+    expect(items[0].find('.news-date').text()).toBe('11-24')
+    expect(items[1].text()).toContain('更新')
+    expect(items[1].text()).toContain('版本更新')
+    mocks.notice.notices = []
+  })
+
+  it('无系统通知时平台消息显示空态', async () => {
+    mocks.notice.notices = []
+    const wrapper = mountLobby()
+    await flushPromises()
+    expect(wrapper.find('.news-panel .panel-empty').text()).toBe('暂无平台消息')
+    expect(wrapper.findAll('.news-panel .news-item')).toHaveLength(0)
   })
 
   it('战绩栏取最近 5 场，展示游戏名、人数、时长与胜负', async () => {

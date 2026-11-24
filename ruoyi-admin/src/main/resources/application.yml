@@ -131,6 +131,8 @@ security:
     - /api/online
     # 游戏定义目录（大厅 NEW 图标所需，只读，允许未登录查看）
     - /api/dicego/games
+    # 平台消息（邮件消息中心与大厅共用，直读 sys_message，允许未登录查看）
+    - /api/dicego/notice/list
 
 # MyBatisPlus配置
 # https://baomidou.com/config/

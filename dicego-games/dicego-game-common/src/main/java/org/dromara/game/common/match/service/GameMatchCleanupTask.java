@@ -1,6 +1,7 @@
 package org.dromara.game.common.match.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +33,8 @@ import java.util.stream.Collectors;
  *   <li>创建时间超过 1 小时的对局（无论状态，含已结束的历史）；</li>
  *   <li>解散/ abandoned 的对局：状态为初始化/进行中，但其内存房间已不存在。</li>
  * </ol>
- * 删除主表前先删 game_match_player / game_action_log 子表，避免孤儿行。
+ * 清理采用逻辑删除（del_flag=1）：三张表都只标记，不物理删除，
+ * 便于追溯历史对局；查询侧（GameMatchHistoryService）只查 del_flag=0。
  * 累计战绩 game_player_stat 是聚合数据，不随单局删除。
  *
  * <p>与项目其它定时任务一致，自建 daemon 调度器，不依赖全局 @EnableScheduling。
@@ -101,9 +103,10 @@ public class GameMatchCleanupTask {
     int cleanup(LocalDateTime now, int ageHours) {
         LocalDateTime cutoff = now.minusHours(Math.max(1, ageHours));
 
-        // 1) 超过保留时长的对局
+        // 1) 超过保留时长的对局（只查未删除的，避免重复清理）
         List<Long> staleIds = matchMapper.selectList(new LambdaQueryWrapper<GameMatchEntity>()
                 .select(GameMatchEntity::getId)
+                .eq(GameMatchEntity::getDelFlag, "0")
                 .lt(GameMatchEntity::getCreateTime, cutoff))
             .stream().map(GameMatchEntity::getId).toList();
 
@@ -113,6 +116,7 @@ public class GameMatchCleanupTask {
             .collect(Collectors.toSet());
         List<Long> dissolvedIds = matchMapper.selectList(new LambdaQueryWrapper<GameMatchEntity>()
                 .select(GameMatchEntity::getId, GameMatchEntity::getRoomNo)
+                .eq(GameMatchEntity::getDelFlag, "0")
                 .in(GameMatchEntity::getMatchStatus, UNFINISHED_STATUS))
             .stream()
             .filter(match -> match.getRoomNo() == null || !activeRooms.contains(match.getRoomNo()))
@@ -124,12 +128,21 @@ public class GameMatchCleanupTask {
         if (allIds.isEmpty()) return 0;
 
         List<Long> ids = List.copyOf(allIds);
-        matchPlayerMapper.delete(new LambdaQueryWrapper<GameMatchPlayerEntity>()
+        // 逻辑删除：三张表统一标记 del_flag=1，主表最后标记
+        matchPlayerMapper.update(null, new LambdaUpdateWrapper<GameMatchPlayerEntity>()
+            .set(GameMatchPlayerEntity::getDelFlag, "1")
+            .eq(GameMatchPlayerEntity::getDelFlag, "0")
             .in(GameMatchPlayerEntity::getMatchId, ids));
-        actionLogMapper.delete(new LambdaQueryWrapper<GameActionLogEntity>()
+        actionLogMapper.update(null, new LambdaUpdateWrapper<GameActionLogEntity>()
+            .set(GameActionLogEntity::getDelFlag, "1")
+            .eq(GameActionLogEntity::getDelFlag, "0")
             .in(GameActionLogEntity::getMatchId, ids));
-        matchMapper.deleteBatchIds(ids);
-        log.info("对局记录清理: 删除 {} 局（超时 {} / 解散 {}）", ids.size(), staleIds.size(), dissolvedIds.size());
+        matchMapper.update(null, new LambdaUpdateWrapper<GameMatchEntity>()
+            .set(GameMatchEntity::getDelFlag, "1")
+            .eq(GameMatchEntity::getDelFlag, "0")
+            .in(GameMatchEntity::getId, ids));
+        log.info("对局记录逻辑删除: 标记 {} 局（超时 {} / 解散 {}）",
+            ids.size(), staleIds.size(), dissolvedIds.size());
         return ids.size();
     }
 }

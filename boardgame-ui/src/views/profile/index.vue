@@ -111,7 +111,7 @@ const recentLoading = ref(false)
 async function loadRecent(): Promise<void> {
   recentLoading.value = true
   try {
-    const data = await getRecentMatches(10)
+    const data = await getRecentMatches(5)
     recentMatches.value = data.success ? (data.matches ?? []) : []
   } catch {
     // 战绩失败不打扰用户：按空列表展示

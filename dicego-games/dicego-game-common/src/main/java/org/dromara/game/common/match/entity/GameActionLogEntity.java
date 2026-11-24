@@ -73,4 +73,9 @@ public class GameActionLogEntity implements Serializable {
      * 服务端执行时间
      */
     private LocalDateTime executeTime;
+
+    /**
+     * 删除标志（0存在 1删除）
+     */
+    private String delFlag;
 }

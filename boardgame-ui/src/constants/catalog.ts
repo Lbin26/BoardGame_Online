@@ -148,18 +148,21 @@ export function findGame(key: unknown): Game | undefined {
   return GAMES.find((g) => g.key === key)
 }
 
-export function gamesInZone(zoneKey: string): Game[] {
-  return GAMES.filter((g) => g.zone === zoneKey)
+export function gamesInZone(zoneKey: string, games: Game[] = GAMES): Game[] {
+  return games.filter((g) => g.zone === zoneKey)
 }
 
-/** 大厅层级推导：可玩且归属匹配才进房间层；已知不可玩/错配回落分区层；非法回落首屏 */
-export function resolveLevel(query: Record<string, unknown>): {
+/**
+ * 大厅层级推导：可玩且归属匹配才进房间层；已知不可玩/错配回落分区层；非法回落首屏。
+ * games 默认静态目录，大厅加载 game_definition 成功后传入数据库列表。
+ */
+export function resolveLevel(query: Record<string, unknown>, games: Game[] = GAMES): {
   level: 0 | 1 | 2
   zone?: Zone
   game?: Game
 } {
   const zone = findZone(query.zone)
-  const game = findGame(query.game)
+  const game = games.find((g) => g.key === query.game)
   if (zone && game && game.zone === zone.key && game.playable) {
     return { level: 2, zone, game }
   }

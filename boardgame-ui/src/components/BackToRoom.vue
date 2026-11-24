@@ -39,8 +39,8 @@ onMounted(async () => {
 
   try {
     const probe = await adapter.probeRoom(saved.roomId, owner)
-    // 房间不存在或对局已结束：不再提供"回到房间"
-    if (!probe.success || probe.status === 'FINISHED') {
+    // 房间不存在、已结束或已关闭：不再提供"回到房间"
+    if (!probe.success || probe.status === 'FINISHED' || probe.status === 'CLOSED') {
       forgetLastRoom()
       return
     }

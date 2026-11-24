@@ -3,6 +3,11 @@ package org.dromara.game.common.room;
 import org.dromara.game.common.enums.RoomStatus;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collection;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 清理规则测试：仅无人在线且超宽限才移除；刷新页面（断线重连）不误杀 */
@@ -14,14 +19,21 @@ class GameRoomManagerCleanupTest {
 
     /** 最小 GameRoom 子类：takeSeat 进 PLAYING，resign 进 FINISHED，驱动各状态宽限分支 */
     static class TestRoom extends GameRoom {
+        private final Set<String> seated = ConcurrentHashMap.newKeySet();
+
         TestRoom(String roomId) { super(roomId); }
         void takeSeat(String playerName) {
+            seated.add(playerName);
             this.status = RoomStatus.PLAYING;
             touch();
         }
         void resign() {
             this.status = RoomStatus.FINISHED;
             touch();
+        }
+        @Override
+        protected Collection<String> participantNames() {
+            return seated;
         }
     }
 
@@ -121,6 +133,28 @@ class GameRoomManagerCleanupTest {
         TestRoom room = create();
         room.markConnected("alice", true);
         manager.cleanup(room.getCreatedAt() + 3_600_000 + 1);
+        assertNull(manager.getRoom(room.getRoomId()));
+    }
+
+    @Test
+    void allParticipantsAfkClosesRoomWithClosedStatus() {
+        TestRoom room = create();
+        room.takeSeat("alice");
+        room.takeSeat("bob");
+        room.markConnected("alice", true);
+        room.markConnected("bob", true);
+        room.setAfk("alice", true);
+        room.setAfk("bob", true);
+
+        AtomicReference<String> reason = new AtomicReference<>();
+        manager.setRoomCloseListener((roomId, r) -> {
+            reason.set(r);
+            assertEquals(RoomStatus.CLOSED, room.getStatus());
+        });
+        manager.cleanup(room.getLastActivityAt());
+
+        assertEquals("全员待机", reason.get());
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
         assertNull(manager.getRoom(room.getRoomId()));
     }
 }

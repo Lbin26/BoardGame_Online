@@ -10,6 +10,7 @@ import org.dromara.game.common.match.entity.GameMatchPlayerEntity;
 import org.dromara.game.common.match.mapper.GameActionLogMapper;
 import org.dromara.game.common.match.mapper.GameMatchMapper;
 import org.dromara.game.common.match.mapper.GameMatchPlayerMapper;
+import org.dromara.game.common.match.service.GamePlayerStatService;
 import org.dromara.halligalli.engine.HalliGalliBoard;
 import org.dromara.halligalli.manager.HalliGalliRoom;
 import org.springframework.stereotype.Component;
@@ -45,6 +46,7 @@ public class DbHalliGalliMatchRecorder implements HalliGalliMatchRecorder {
     private final GameMatchMapper matchMapper;
     private final GameMatchPlayerMapper matchPlayerMapper;
     private final GameActionLogMapper actionLogMapper;
+    private final GamePlayerStatService playerStatService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -125,6 +127,8 @@ public class DbHalliGalliMatchRecorder implements HalliGalliMatchRecorder {
                 .set(GameMatchPlayerEntity::getNobleCount, 0)
                 .set(GameMatchPlayerEntity::getRankNo, i + 1)
                 .set(GameMatchPlayerEntity::getWinFlag, i == 0 ? "1" : "0"));
+            // 战绩汇总写入走公共层，与全游戏统一口径
+            playerStatService.record(room.boundUserIdOf(r.name()), r.cardCount(), i == 0, now);
         }
         log.info("房间 {} 终局落库: matchId={}, 胜者={}({} 张牌), 翻牌 {} 次",
             room.getRoomId(), matchId, champion.name(), champion.cardCount(), room.getFlipCount());

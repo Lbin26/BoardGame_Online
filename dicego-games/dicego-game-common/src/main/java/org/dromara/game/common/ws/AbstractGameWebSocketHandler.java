@@ -34,6 +34,12 @@ public abstract class AbstractGameWebSocketHandler<T extends GameRoom> extends T
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * WS 连接静默超时：超过此时长没收到客户端任何消息视为半开连接（浏览器崩溃/网络断），
+     * 不计在线。房间心跳每 25s 一次，这里留 10 分钟余量，与前端待机阈值一致。
+     */
+    public static final long SESSION_IDLE_TTL_MS = 10 * 60_000L;
+
     /** key = roomId + ":" + playerName，同名玩家跨房间不互踢 */
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
@@ -74,18 +80,32 @@ public abstract class AbstractGameWebSocketHandler<T extends GameRoom> extends T
     }
 
     /**
-     * 当前仍打开的连接对应的玩家名集合（按名字去重）。
+     * 当前仍打开且未静默超时的连接对应的玩家名集合（按名字去重）。
      * 平台级在线人数统计用：同一玩家多标签页、多房间、跨游戏多开都只算一人。
-     * 只统计 WS 连接，不把"已入座但断线"的玩家算在线。
+     * 只统计活跃 WS 连接：已关闭、或超过 {@link #SESSION_IDLE_TTL_MS} 没有任何消息
+     * （浏览器直接关闭/网络断开导致服务端未收到 close 的半开连接）都不算在线。
      */
     public Set<String> connectedPlayerNames() {
         Set<String> names = new HashSet<>();
+        long now = System.currentTimeMillis();
         for (WebSocketSession s : sessions.values()) {
             if (!s.isOpen()) continue;
+            if (now - lastActiveAt(s) > SESSION_IDLE_TTL_MS) continue;
             String name = (String) s.getAttributes().get("playerName");
             if (name != null) names.add(name);
         }
         return names;
+    }
+
+    /** 连接最后活跃时刻：建连即写入，收到任意消息都续约；兼容缺失属性的旧 session */
+    private long lastActiveAt(WebSocketSession session) {
+        Object value = session.getAttributes().get("lastActiveAt");
+        return value instanceof Long ts ? ts : System.currentTimeMillis();
+    }
+
+    /** 收到任意消息即续约，避免正常对局中的玩家被误判为半开连接 */
+    private void touchSession(WebSocketSession session) {
+        session.getAttributes().put("lastActiveAt", System.currentTimeMillis());
     }
 
     /** 房主判定：房主是房间级协作原语，所有游戏共用（解散权限校验） */
@@ -139,6 +159,7 @@ public abstract class AbstractGameWebSocketHandler<T extends GameRoom> extends T
         // 不自动入座：未选座的连接一律视为旁观者，满房也允许观战
         session.getAttributes().put("roomId", roomId);
         session.getAttributes().put("playerName", playerName);
+        touchSession(session);
         String key = roomId + ":" + playerName;
         WebSocketSession old = sessions.put(key, session);
         if (old != null && old != session) {
@@ -173,6 +194,7 @@ public abstract class AbstractGameWebSocketHandler<T extends GameRoom> extends T
         T room = roomManager.getRoom(roomId);
         if (room == null) return;
 
+        touchSession(session);
         try {
             JsonNode node = objectMapper.readTree(message.getPayload());
             String type = node.path("type").asText();

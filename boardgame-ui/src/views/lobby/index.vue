@@ -4,14 +4,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import { PLAYABLE_ADAPTERS, adapterOf, adapterByGameCode } from '@/constants/gameAdapters'
-import { getOnlineCount } from '@/api/online'
-import { getGameDefinitions } from '@/api/game'
+import { getOnlineCount, leaveOnline, pingOnline } from '@/api/online'
+import { getGameDefinitions, toCatalogGames } from '@/api/game'
 import { collectNewGameKeys } from '@/utils/newGames'
 import { getRecentMatches, type RecentMatch } from '@/api/match'
 import { useRoom } from '@/composables/useRoom'
+import { useSystemNotices } from '@/composables/useSystemNotices'
 import { useUserStore } from '@/store/user'
 import type { Game } from '@/constants/catalog'
-import { ZONES, POSTER_GAME_KEYS, gamesInZone, resolveLevel } from '@/constants/catalog'
+import { GAMES, ZONES, POSTER_GAME_KEYS, gamesInZone, resolveLevel } from '@/constants/catalog'
 import { findRuleBook } from '@/constants/rules'
 import ZoneGrid from '@/components/ZoneGrid.vue'
 import GameList from '@/components/GameList.vue'
@@ -25,8 +26,11 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+/** 游戏列表：默认静态目录，加载 game_definition 成功后整体替换 */
+const catalogGames = ref<Game[]>(GAMES)
+
 /** 三级导航：URL query 是唯一事实来源（0 分区网格 / 1 游戏列表 / 2 房间层） */
-const nav = computed(() => resolveLevel(route.query))
+const nav = computed(() => resolveLevel(route.query, catalogGames.value))
 
 /** 当前房间层游戏的能力适配器（D9：建房/列表/跳转全部查表，不再写 if/else） */
 const adapter = computed(() => adapterOf(nav.value.game?.key))
@@ -60,25 +64,67 @@ const ONLINE_REFRESH_MS = 10_000
 const onlineCount = ref<number | null>(null)
 let onlineTimer: number | null = null
 
-/** 页面切回前台时立即刷新一次，避免后台期间数字长期停留旧值 */
-function handleVisibility(): void {
-  if (document.visibilityState === 'visible') void refreshOnline()
+/** 10 分钟无任何用户操作视为待机：页面变暗、停心跳并主动下线 */
+const STANDBY_MS = 10 * 60_000
+const standby = ref(false)
+let lastActivityAt = Date.now()
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
+
+/** 用户有操作：更新活跃时刻；待机中则立即唤醒（恢复心跳并刷新人数） */
+function markActivity(): void {
+  lastActivityAt = Date.now()
+  if (standby.value) {
+    standby.value = false
+    void refreshOnline()
+  }
 }
 
-/** 新上线游戏：后端 game_definition.create_time 决定，按前端 game key 索引（失败时降级为空，不阻断大厅） */
+/** 轮询时检测：超过 10 分钟无操作 → 待机（变暗 + 主动下线，立即不计在线） */
+function checkStandby(): void {
+  if (standby.value || Date.now() - lastActivityAt < STANDBY_MS) return
+  standby.value = true
+  const name = currentUserName()
+  if (name) void leaveOnline(name).catch(() => { /* 下线失败由后端 TTL 兜底 */ })
+}
+
+/** 页面切回前台时立即刷新一次，避免后台期间数字长期停留旧值 */
+function handleVisibility(): void {
+  if (document.visibilityState === 'visible') {
+    markActivity()
+    void refreshOnline()
+  }
+}
+
+/** 新上线游戏：后端 game_definition.create_time 决定，按前端 game key 索引 */
 const newGameKeys = ref<Set<string>>(new Set())
 
+/** 游戏列表与 NEW 标都取自 game_definition；接口失败/空表时保留静态目录兜底 */
 async function loadGameDefinitions(): Promise<void> {
   try {
     const data = await getGameDefinitions()
-    if (data?.success) newGameKeys.value = collectNewGameKeys(data.games)
+    if (data?.success && data.games?.length) {
+      catalogGames.value = toCatalogGames(data.games)
+      newGameKeys.value = collectNewGameKeys(data.games)
+    }
   } catch {
+    catalogGames.value = GAMES
     newGameKeys.value = new Set()
   }
 }
 
 /** 装饰性信息：请求失败保留上次值，不弹错、不打断大厅 */
 async function refreshOnline(): Promise<void> {
+  // 待机中不续约（后端已收到下线请求），只保留上次显示的人数
+  if (standby.value) return
+  // 每轮先续约大厅心跳：后端把"房间 WS 玩家 + 大厅心跳玩家"合并去重后返回
+  const name = currentUserName()
+  if (name) {
+    try {
+      await pingOnline(name)
+    } catch {
+      // 心跳失败不阻断人数查询
+    }
+  }
   try {
     const data = await getOnlineCount()
     if (data?.success) onlineCount.value = Number(data.onlineCount) || 0
@@ -87,39 +133,25 @@ async function refreshOnline(): Promise<void> {
   }
 }
 
-/** 系统消息：静态运营内容（上新 / 更新 / 热门），无后端接口时也能展示 */
+/**
+ * 平台消息：与邮件消息中心共用 useSystemNotices，数据直读 boardgame_online.sys_message。
+ * 未登录也能查看；暂无消息时展示空态，不再用硬编码运营内容冒充系统消息。
+ */
 interface SystemNews {
-  tag: '上新' | '更新' | '热门'
+  tag: '公告' | '更新'
   title: string
   detail: string
   date: string
 }
-const SYSTEM_NEWS: SystemNews[] = [
-  {
-    tag: '上新',
-    title: '伯明翰 Brass: Birmingham 海报入库',
-    detail: '硬核重策区筹备中，网络构建与经济经营值得期待',
-    date: '11-23',
-  },
-  {
-    tag: '上新',
-    title: '胡闹运动会 Magical Athlete 上线',
-    detail: '轮抽选手、掷骰竞速，2–6 人同场开跑',
-    date: '11-18',
-  },
-  {
-    tag: '更新',
-    title: '大厅导航升级为七分区',
-    detail: '按玩法机制找桌游，进区即可查看规则与房间',
-    date: '11-16',
-  },
-  {
-    tag: '热门',
-    title: '德国心脏病本周最热',
-    detail: '反应力对决，派对区房间持续开放',
-    date: '11-15',
-  },
-]
+const { notices: systemNotices } = useSystemNotices()
+const systemNews = computed<SystemNews[]>(() =>
+  systemNotices.value.slice(0, 5).map((notice) => ({
+    tag: notice.kind === 'version' ? '更新' : '公告',
+    title: notice.title,
+    detail: notice.content,
+    date: notice.createdAt ? notice.createdAt.slice(5, 10) : '',
+  })),
+)
 
 /** 玩家战绩：复用全游戏共用接口，只取最近 5 场 */
 const recentMatches = ref<RecentMatch[]>([])
@@ -191,7 +223,7 @@ const avatarUrl = computed(() => userStore.userInfo?.avatarUrl || '')
 function statusText(status: string): string {
   const s = status.toLowerCase()
   return (
-    { waiting: '等待中', playing: '对局中', finished: '已结束' }[s] ?? s
+    { waiting: '等待中', playing: '对局中', finished: '已结束', closed: '已关闭' }[s] ?? s
   )
 }
 
@@ -306,8 +338,13 @@ onMounted(async () => {
   void refreshOnline()
   void loadGameDefinitions()
   void loadRecent()
-  onlineTimer = window.setInterval(() => void refreshOnline(), ONLINE_REFRESH_MS)
+  onlineTimer = window.setInterval(() => {
+    checkStandby()
+    void refreshOnline()
+  }, ONLINE_REFRESH_MS)
+  ACTIVITY_EVENTS.forEach((event) => document.addEventListener(event, markActivity, { passive: true }))
   document.addEventListener('visibilitychange', handleVisibility)
+  window.addEventListener('pagehide', handlePageHide)
   // 刷新后 store 仅水合了 token，需先补齐 userInfo；失败不阻断匿名列表
   if (userStore.isLogin && !userStore.userInfo) {
     try {
@@ -321,18 +358,40 @@ onMounted(async () => {
   }
 })
 
+/** 关页/刷新：主动下线，避免浏览器来不及等心跳 TTL 导致"退出了还在计数" */
+function handlePageHide(): void {
+  const name = currentUserName()
+  if (name) void leaveOnline(name).catch(() => { /* 关页请求失败由后端 TTL 兜底 */ })
+}
+
+/** 退出登录：先主动下线，再清本地登录态 */
+function handleLogout(): void {
+  handlePageHide()
+  userStore.logout()
+}
+
 onUnmounted(() => {
   stopPolling()
   if (onlineTimer !== null) {
     window.clearInterval(onlineTimer)
     onlineTimer = null
   }
+  ACTIVITY_EVENTS.forEach((event) => document.removeEventListener(event, markActivity))
   document.removeEventListener('visibilitychange', handleVisibility)
+  window.removeEventListener('pagehide', handlePageHide)
 })
 </script>
 
 <template>
-  <div class="lobby-page">
+  <div class="lobby-page" :class="{ 'is-standby': standby }">
+    <!-- 待机遮罩：10 分钟无操作变暗，任意操作自动唤醒 -->
+    <div v-if="standby" class="standby-veil" aria-live="polite">
+      <div class="standby-card">
+        <span class="standby-icon" aria-hidden="true">☾</span>
+        <strong>待机中</strong>
+        <small>动一下鼠标或按任意键继续</small>
+      </div>
+    </div>
     <div class="lobby-top">
       <div class="lobby-top-in">
         <img class="lobby-logo theme-logo" :src="logoWordmark" alt="DiceGo" />
@@ -361,7 +420,7 @@ onUnmounted(() => {
               userStore.userInfo?.nickName || userStore.userInfo?.userName || '未登录'
             }}</span>
           </button>
-          <button type="button" class="btn btn-ghost btn-sm" @click="userStore.logout()">
+          <button type="button" class="btn btn-ghost btn-sm" @click="handleLogout">
             退出登录
           </button>
         </div>
@@ -423,8 +482,8 @@ onUnmounted(() => {
         <section class="lobby-side-panels">
           <div class="side-panel news-panel rise" style="--i: 7">
             <h2 class="panel-title">📢 平台消息</h2>
-            <ul class="news-list">
-              <li v-for="news in SYSTEM_NEWS" :key="news.title" class="news-item">
+            <ul v-if="systemNews.length > 0" class="news-list">
+              <li v-for="(news, i) in systemNews" :key="`${news.title}-${i}`" class="news-item">
                 <span class="news-tag" :class="`tag-${news.tag}`">{{ news.tag }}</span>
                 <span class="news-text">
                   <b>{{ news.title }}</b>
@@ -433,6 +492,7 @@ onUnmounted(() => {
                 <time class="news-date">{{ news.date }}</time>
               </li>
             </ul>
+            <div v-else class="panel-empty">暂无平台消息</div>
           </div>
 
           <div class="side-panel record-panel rise" style="--i: 8">
@@ -470,7 +530,7 @@ onUnmounted(() => {
       <GameList
         v-else-if="nav.level === 1 && nav.zone"
         :zone="nav.zone!"
-        :games="gamesInZone(nav.zone!.key)"
+        :games="gamesInZone(nav.zone!.key, catalogGames)"
         :new-keys="newGameKeys"
         @select="openGame"
         @rules="(key) => router.push(`/rules/${key}`)"
@@ -645,6 +705,44 @@ onUnmounted(() => {
   color: var(--ink);
   font-size: 16px;
   line-height: 1.65;
+}
+
+/* ---- 待机遮罩：10 分钟无操作变暗，任意操作即唤醒 ---- */
+.standby-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(12, 14, 20, 0.72);
+  backdrop-filter: blur(6px);
+  animation: veil-in 0.4s var(--ease) both;
+}
+.standby-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  text-align: center;
+  strong { font-family: var(--font-display); font-size: 24px; font-weight: 400; }
+  small { color: var(--muted); font-size: 13px; }
+}
+.standby-icon {
+  font-size: 34px;
+  line-height: 1;
+  color: var(--color-primary);
+}
+@keyframes veil-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .standby-veil { animation: none; }
 }
 
 /* ---- 顶栏 ---- */
@@ -1025,6 +1123,7 @@ input[type='text'] {
   border: 1px solid var(--accent-line);
   color: var(--color-primary);
   background: var(--accent-soft);
+  &.tag-公告 { color: var(--color-primary); border-color: currentColor; background: transparent; }
   &.tag-更新 { color: #6fa8dc; border-color: currentColor; background: transparent; }
   &.tag-热门 { color: #e0a53a; border-color: currentColor; background: transparent; }
 }
@@ -1338,6 +1437,10 @@ input[type='text'] {
 .status-finished {
   color: var(--muted);
   border: 1px dashed var(--line);
+}
+.status-closed {
+  color: #c0392b;
+  border: 1px solid currentColor;
 }
 @keyframes pulse {
   0%,

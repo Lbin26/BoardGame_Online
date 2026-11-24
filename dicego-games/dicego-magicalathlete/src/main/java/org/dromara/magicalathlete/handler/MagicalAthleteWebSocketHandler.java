@@ -9,6 +9,7 @@ import org.dromara.game.common.ws.AbstractGameWebSocketHandler;
 import org.dromara.magicalathlete.domain.vo.MagicalAthleteSnapshotVO;
 import org.dromara.magicalathlete.enums.MagicalAthleteMessageType;
 import org.dromara.magicalathlete.manager.MagicalAthleteRoom;
+import org.dromara.magicalathlete.service.MagicalAthleteMatchRecorder;
 import org.dromara.magicalathlete.manager.MagicalAthleteRoom.PickResult;
 import org.dromara.magicalathlete.manager.MagicalAthleteRoom.ReadyResult;
 import org.dromara.magicalathlete.manager.MagicalAthleteRoom.OptionalResult;
@@ -34,8 +35,12 @@ import java.util.Map;
 @Component
 public class MagicalAthleteWebSocketHandler extends AbstractGameWebSocketHandler<MagicalAthleteRoom> {
 
-    public MagicalAthleteWebSocketHandler(GameRoomManager<MagicalAthleteRoom> roomManager) {
+    private final MagicalAthleteMatchRecorder matchRecorder;
+
+    public MagicalAthleteWebSocketHandler(GameRoomManager<MagicalAthleteRoom> roomManager,
+                                          MagicalAthleteMatchRecorder matchRecorder) {
         super(roomManager);
+        this.matchRecorder = matchRecorder;
     }
 
     @Override
@@ -282,6 +287,12 @@ public class MagicalAthleteWebSocketHandler extends AbstractGameWebSocketHandler
                 && snapshot.rankings().stream().filter(s -> s.rank() == 1).count() > 1;
             over.put("tie", tie);
             broadcast(roomId, GameMessage.of(MagicalAthleteMessageType.GAME_OVER, roomId, "system", over));
+            // 终局战绩：DB 异常只记日志，绝不中断播报/清理（与另三款游戏一致的可玩性优先）
+            try {
+                matchRecorder.onFinish(room, snapshot.rankings());
+            } catch (Exception e) {
+                log.error("房间 {} 终局战绩写入失败", roomId, e);
+            }
         }
     }
 

@@ -2,6 +2,7 @@ package org.dromara.game.common.match.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.game.common.match.entity.GameActionLogEntity;
@@ -26,7 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 对局清理：超时对局与解散对局都删除，仍在进行且房间存在的对局保留。 */
+/** 对局清理：超时对局与解散对局都逻辑删除（del_flag=1），仍在进行且房间存在的对局保留。 */
 @ExtendWith(MockitoExtension.class)
 class GameMatchCleanupTaskTest {
 
@@ -78,9 +79,9 @@ class GameMatchCleanupTaskTest {
         int removed = task(List.of(managerWithRooms())).cleanup(NOW, 1);
 
         assertEquals(1, removed);
-        verify(matchPlayerMapper).delete(any(LambdaQueryWrapper.class));
-        verify(actionLogMapper).delete(any(LambdaQueryWrapper.class));
-        verify(matchMapper).deleteBatchIds(List.of(1L));
+        verify(matchPlayerMapper).update(any(), any(LambdaUpdateWrapper.class));
+        verify(actionLogMapper).update(any(), any(LambdaUpdateWrapper.class));
+        verify(matchMapper).update(any(), any(LambdaUpdateWrapper.class));
     }
 
     @Test
@@ -91,7 +92,7 @@ class GameMatchCleanupTaskTest {
         int removed = task(List.of(managerWithRooms("OTHER1"))).cleanup(NOW, 1);
 
         assertEquals(1, removed);
-        verify(matchMapper).deleteBatchIds(List.of(2L));
+        verify(matchMapper).update(any(), any(LambdaUpdateWrapper.class));
     }
 
     @Test
@@ -102,6 +103,6 @@ class GameMatchCleanupTaskTest {
         int removed = task(List.of(managerWithRooms("ALIVE1"))).cleanup(NOW, 1);
 
         assertEquals(0, removed);
-        verify(matchMapper, org.mockito.Mockito.never()).deleteBatchIds(any());
+        verify(matchMapper, org.mockito.Mockito.never()).update(any(), any(LambdaUpdateWrapper.class));
     }
 }

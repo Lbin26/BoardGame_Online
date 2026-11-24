@@ -1,6 +1,5 @@
 package org.dromara.incangold.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import lombok.RequiredArgsConstructor;
@@ -8,11 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.game.common.match.entity.GameActionLogEntity;
 import org.dromara.game.common.match.entity.GameMatchEntity;
 import org.dromara.game.common.match.entity.GameMatchPlayerEntity;
-import org.dromara.game.common.match.entity.GamePlayerStatEntity;
 import org.dromara.game.common.match.mapper.GameActionLogMapper;
 import org.dromara.game.common.match.mapper.GameMatchMapper;
 import org.dromara.game.common.match.mapper.GameMatchPlayerMapper;
-import org.dromara.game.common.match.mapper.GamePlayerStatMapper;
+import org.dromara.game.common.match.service.GamePlayerStatService;
 import org.dromara.incangold.engine.IncanGoldEngine;
 import org.dromara.incangold.manager.IncanGoldRoom;
 import org.springframework.stereotype.Component;
@@ -41,7 +39,7 @@ public class DbIncanGoldMatchRecorder implements IncanGoldMatchRecorder {
     private final GameMatchMapper matchMapper;
     private final GameMatchPlayerMapper matchPlayerMapper;
     private final GameActionLogMapper actionLogMapper;
-    private final GamePlayerStatMapper playerStatMapper;
+    private final GamePlayerStatService playerStatService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -123,40 +121,10 @@ public class DbIncanGoldMatchRecorder implements IncanGoldMatchRecorder {
                 .set(GameMatchPlayerEntity::getNobleCount, r.artifacts())
                 .set(GameMatchPlayerEntity::getRankNo, i + 1)
                 .set(GameMatchPlayerEntity::getWinFlag, win ? "1" : "0"));
-            upsertPlayerStat(room.boundUserIdOf(r.name()), r.score(), win, now);
+            // 战绩汇总写入已提炼到公共层，全游戏统一口径
+            playerStatService.record(room.boundUserIdOf(r.name()), r.score(), win, now);
         }
         log.info("房间 {} 终局落库: matchId={}, 胜者={}({} 分)",
             room.getRoomId(), matchId, champion.name(), champion.score());
-    }
-
-    /** 汇总战绩：游客（<=0）不写；登录玩家按 user_id 累加，保证战绩随对局实时更新 */
-    private void upsertPlayerStat(long userId, int score, boolean win, LocalDateTime now) {
-        if (userId <= 0) return;
-        GamePlayerStatEntity stat = playerStatMapper.selectOne(new LambdaQueryWrapper<GamePlayerStatEntity>()
-            .eq(GamePlayerStatEntity::getUserId, userId)
-            .eq(GamePlayerStatEntity::getDelFlag, "0"));
-        if (stat == null) {
-            GamePlayerStatEntity row = new GamePlayerStatEntity();
-            row.setUserId(userId);
-            row.setTotalMatches(1);
-            row.setWinMatches(win ? 1 : 0);
-            row.setLoseMatches(win ? 0 : 1);
-            row.setHighestScore(score);
-            row.setTotalScore((long) score);
-            row.setLastPlayTime(now);
-            row.setDelFlag("0");
-            row.setCreateTime(now);
-            row.setUpdateTime(now);
-            playerStatMapper.insert(row);
-            return;
-        }
-        playerStatMapper.update(null, new LambdaUpdateWrapper<GamePlayerStatEntity>()
-            .eq(GamePlayerStatEntity::getId, stat.getId())
-            .setSql("total_matches = total_matches + 1")
-            .setSql(win ? "win_matches = win_matches + 1" : "lose_matches = lose_matches + 1")
-            .setSql("highest_score = GREATEST(highest_score, " + score + ")")
-            .setSql("total_score = total_score + " + score)
-            .set(GamePlayerStatEntity::getLastPlayTime, now)
-            .set(GamePlayerStatEntity::getUpdateTime, now));
     }
 }

@@ -1,7 +1,9 @@
 /**
- * 站内消息 / 意见反馈数据层。
- * 当前以 localStorage 持久化（同一浏览器跨账号可见），接口形状刻意贴近后端 R<T>，
- * 后续接真实接口时只需替换函数实现，调用组件无需改动。
+ * 站内私信 / 意见反馈数据层，以 localStorage 持久化。
+ *
+ * 平台公告不在此处：邮件消息中心与大厅「平台消息」统一走 @/api/notice，
+ * 数据源是 boardgame_online.sys_message。本模块只保留玩家私信与管理员意见，
+ * 并会清理旧版本遗留的硬编码 system 通知（死通知）。
  */
 
 const MESSAGES_KEY = 'dicego:messages'
@@ -58,59 +60,39 @@ function newId(prefix: string): string {
   return `${prefix}-${seq}`
 }
 
-function seedIfEmpty(): void {
-  if (localStorage.getItem(MESSAGES_KEY) !== null) return
-  const now = Date.now()
-  const seed: InboxMessage[] = [
-    {
-      id: newId('sys'),
-      kind: 'system',
-      from: 'system',
-      fromName: 'DiceGo 平台',
-      to: 'all',
-      title: '欢迎来到 DiceGo',
-      content: '选一款桌游开局，或在右下角「发送意见」告诉我们你的想法。',
-      createdAt: new Date(now - 3_600_000).toISOString(),
-      read: false,
-    },
-    {
-      id: newId('sys'),
-      kind: 'system',
-      from: 'system',
-      fromName: 'DiceGo 平台',
-      to: 'all',
-      title: '胡闹运动会已上线',
-      content: '轮抽选手、掷骰竞速，2–6 人同场开跑，快去派对区开一局。',
-      createdAt: new Date(now - 86_400_000).toISOString(),
-      read: true,
-    },
-  ]
-  persist(MESSAGES_KEY, seed)
+/**
+ * 读取本地私信，并顺手清掉旧版本写入的硬编码 system 通知。
+ * 平台公告已改由 sys_message 提供，这些遗留条目不能再出现在邮件面板里。
+ */
+function loadMessages(): InboxMessage[] {
+  const raw = safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  const kept = raw.filter((m) => m.kind !== 'system')
+  if (kept.length !== raw.length) persist(MESSAGES_KEY, kept)
+  return kept
 }
 
-/** 当前用户可见的消息：全体广播 + 发给自己的私信（不含意见，意见走管理员视图） */
+/** 当前用户可见的消息：仅私信（意见走管理员视图，平台公告走 sys_message） */
 export function listMessages(userName: string): InboxMessage[] {
-  seedIfEmpty()
-  return safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  return loadMessages()
     .filter((m) => m.kind !== 'opinion' && (m.to === 'all' || (!!userName && m.to === userName)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-/** 未读通知数（全体广播未读也算在内） */
+/** 未读私信数（平台公告未读由 useSystemNotices 单独统计） */
 export function countUnread(userName: string): number {
   return listMessages(userName).filter((m) => !m.read).length
 }
 
 /** 标记某条消息已读 */
 export function markMessageRead(id: string): void {
-  const list = safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  const list = loadMessages()
   const next = list.map((m) => (m.id === id ? { ...m, read: true } : m))
   persist(MESSAGES_KEY, next)
 }
 
 /** 全部标为已读 */
 export function markAllRead(userName: string): void {
-  const list = safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  const list = loadMessages()
   const next = list.map((m) =>
     !m.read && (m.to === 'all' || (!!userName && m.to === userName)) ? { ...m, read: true } : m,
   )
@@ -124,7 +106,6 @@ export function sendMessage(
   to: string,
   content: string,
 ): InboxMessage {
-  seedIfEmpty()
   const message: InboxMessage = {
     id: newId('msg'),
     kind: 'chat',
@@ -136,7 +117,7 @@ export function sendMessage(
     createdAt: new Date().toISOString(),
     read: false,
   }
-  persist(MESSAGES_KEY, [...safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), []), message])
+  persist(MESSAGES_KEY, [...loadMessages(), message])
   return message
 }
 
@@ -152,7 +133,6 @@ export function sendOpinion(userName: string, nickName: string, content: string)
   }
   persist(OPINIONS_KEY, [...listOpinions(), opinion])
 
-  seedIfEmpty()
   const message: InboxMessage = {
     id: newId('op-msg'),
     kind: 'opinion',
@@ -164,7 +144,7 @@ export function sendOpinion(userName: string, nickName: string, content: string)
     createdAt: opinion.createdAt,
     read: false,
   }
-  persist(MESSAGES_KEY, [...safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), []), message])
+  persist(MESSAGES_KEY, [...loadMessages(), message])
   return opinion
 }
 
@@ -177,15 +157,14 @@ export function listOpinions(): Opinion[] {
 
 /** 管理员视角：所有意见类通知 */
 export function listAdminMessages(): InboxMessage[] {
-  seedIfEmpty()
-  return safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  return loadMessages()
     .filter((m) => m.kind === 'opinion')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 /** 管理员标记意见类通知已读 */
 export function markAdminMessageRead(id: string): void {
-  const list = safeParse<InboxMessage>(localStorage.getItem(MESSAGES_KEY), [])
+  const list = loadMessages()
   persist(
     MESSAGES_KEY,
     list.map((m) => (m.id === id ? { ...m, read: true } : m)),

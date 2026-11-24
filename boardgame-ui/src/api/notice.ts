@@ -1,11 +1,11 @@
 /**
- * DiceGo 平台通知数据层：借用 RuoYi 消息盒子传输，但只展示 DiceGo 自己的通知。
+ * DiceGo 平台通知数据层：唯一数据源是 boardgame_online.sys_message。
  *
- * - 玩家拉取：GET /resource/message/box（返回 noticeList / systemList / workflowList）。
- * - 来源白名单：仅 DiceGo 超管公告（source=dicego）与版本更新（source=version）会被展示；
- *   RuoYi 原生系统消息、通知公告、工作流消息一律隐藏——平台对用户只呈现 DiceGo 品牌。
- * - 超管发布：POST /api/dicego/notice/publish（服务端按超管名单校验）。
- * - 已读状态：后端 SysMessageVo 无 read 字段，前端用 localStorage 按 messageId 记录。
+ * - 拉取：GET /api/dicego/notice/list，后端直接查询 sys_message，
+ *   只返回 DiceGo 公告（source=dicego）与版本更新（source=version）的全局广播。
+ * - 邮件消息中心与大厅「平台消息」共用本模块，杜绝各写一套硬编码通知。
+ * - 超管发布：POST /api/dicego/notice/publish（服务端按超管名单校验），发布后同样落到 sys_message。
+ * - 已读状态：sys_message 无 read 字段，前端用 localStorage 按 messageId 记录。
  */
 import { request } from '@/utils/request'
 
@@ -23,14 +23,7 @@ export interface SysMessageVo {
   createTime: string | null
 }
 
-/** 消息盒子响应 */
-export interface MessageBoxVo {
-  systemList: SysMessageVo[]
-  noticeList: SysMessageVo[]
-  workflowList: SysMessageVo[]
-}
-
-/** 统一后的通知条目（消息中心消费） */
+/** 统一后的通知条目（消息中心与大厅共用） */
 export interface SystemNotice {
   id: string
   /** version=版本更新，notice=平台公告；均为 DiceGo 平台消息 */
@@ -41,12 +34,12 @@ export interface SystemNotice {
   read: boolean
 }
 
-/** DiceGo 平台通知的来源白名单；RuoYi 原生来源（backend / notice / workflow）一概不展示 */
+/** DiceGo 平台通知的来源白名单；后端已过滤，前端再兜底一次防止接口变更 */
 const DICEGO_SOURCES = new Set(['dicego', 'version'])
 
-/** 拉取当前用户消息盒子（需登录） */
-export function fetchMessageBox(): Promise<MessageBoxVo> {
-  return request.get('/resource/message/box')
+/** 拉取平台消息：直读后端 sys_message 列表，未登录也可查看 */
+export function fetchPlatformNotices(): Promise<SysMessageVo[]> {
+  return request.get('/api/dicego/notice/list')
 }
 
 /** 系统通知已读记录的本地键 */
@@ -89,8 +82,8 @@ export function markAllNoticesRead(ids: string[]): void {
   persistSet(set)
 }
 
-/** 把消息盒转换成 DiceGo 通知列表：仅平台来源，按时间倒序；RuoYi 原生消息全部隐藏 */
-export function toSystemNotices(box: MessageBoxVo): SystemNotice[] {
+/** 把 sys_message 记录转换成 DiceGo 通知列表：仅平台来源，按时间倒序 */
+export function toSystemNotices(messages: SysMessageVo[]): SystemNotice[] {
   const seen = readSet()
   const map = (m: SysMessageVo, kind: SystemNotice['kind']): SystemNotice => {
     const data = m.data ?? {}
@@ -111,9 +104,7 @@ export function toSystemNotices(box: MessageBoxVo): SystemNotice[] {
       read: seen.has(String(m.messageId)),
     }
   }
-  // 两条来源都在 noticeList（后端按 type=notice 归类）；按 source 精确白名单过滤，
-  // 不消费 systemList / workflowList，彻底隐藏 RuoYi 原生消息。
-  return box.noticeList
+  return messages
     .filter((m) => DICEGO_SOURCES.has(m.source))
     .map((m) => map(m, m.source === 'version' ? 'version' : 'notice'))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

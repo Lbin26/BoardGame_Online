@@ -24,6 +24,6 @@ export interface RecentMatchResp {
  * 我的最近对局（全游戏共用）：后端按 token 取当前用户，不接受 userId 参数。
  * 未登录返回 success=false，前端按空列表处理。
  */
-export function getRecentMatches(limit = 10): Promise<RecentMatchResp> {
+export function getRecentMatches(limit = 5): Promise<RecentMatchResp> {
   return rawRequest.get('/api/game/matches/recent', { params: { limit } })
 }

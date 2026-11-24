@@ -18,9 +18,13 @@ import org.dromara.common.redis.utils.RedisUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.config.properties.CaptchaProperties;
 import org.dromara.system.api.model.RegisterBody;
+import org.dromara.system.domain.SysRole;
 import org.dromara.system.domain.SysUser;
+import org.dromara.system.domain.SysUserRole;
 import org.dromara.system.domain.bo.SysUserBo;
+import org.dromara.system.mapper.SysRoleMapper;
 import org.dromara.system.mapper.SysUserMapper;
+import org.dromara.system.mapper.SysUserRoleMapper;
 import org.dromara.system.service.ISysUserService;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +39,8 @@ public class SysRegisterService {
 
     private final ISysUserService userService;
     private final SysUserMapper userMapper;
+    private final SysRoleMapper roleMapper;
+    private final SysUserRoleMapper userRoleMapper;
     private final CaptchaProperties captchaProperties;
 
     /**
@@ -69,7 +75,30 @@ public class SysRegisterService {
         if (!regFlag) {
             throw new UserException("user.register.error");
         }
+        assignDefaultRole(username);
         recordLoginInfo(username, Constants.REGISTER, MessageUtils.message("user.register.success"));
+    }
+
+    /**
+     * 新注册用户统一挂「普通用户」角色（role_key = common）。
+     *
+     * <p>角色不存在时跳过而不是抛错：角色由 script/sql/2026-11-24-role-update.sql 初始化，
+     * 注册链路不能因为运维脚本没执行而整体失败。
+     */
+    private void assignDefaultRole(String username) {
+        SysRole common = roleMapper.lambda()
+            .eq(SysRole::getRoleKey, "common")
+            .eq(SysRole::getDelFlag, "0")
+            .one();
+        if (common == null) return;
+        SysUser user = userMapper.lambda()
+            .eq(SysUser::getUserName, username)
+            .one();
+        if (user == null) return;
+        SysUserRole link = new SysUserRole();
+        link.setUserId(user.getUserId());
+        link.setRoleId(common.getRoleId());
+        userRoleMapper.insert(link);
     }
 
     /**

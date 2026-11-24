@@ -22,10 +22,9 @@ const userStore = useUserStore()
 
 const userName = computed(() => userStore.userInfo?.userName ?? '')
 const nickName = computed(() => userStore.userInfo?.nickName ?? '')
-const admin = computed(() => isSuperAdmin(userName.value, nickName.value))
-const isLogin = computed(() => userStore.isLogin)
+const admin = computed(() => isSuperAdmin(userStore.roleGroup))
 
-// DiceGo 平台通知（超管公告 + 版本更新自动通知；RuoYi 原生消息已在数据层隐藏）
+// DiceGo 平台通知：与大厅「平台消息」共用 sys_message 数据源
 const {
   notices: systemNotices,
   unread: systemUnread,
@@ -33,7 +32,7 @@ const {
   openNotice,
   readAll: readAllNotices,
   publish: publishNotice,
-} = useSystemNotices({ loggedIn: isLogin })
+} = useSystemNotices()
 
 const open = ref(false)
 const tab = ref<'inbox' | 'admin'>('inbox')

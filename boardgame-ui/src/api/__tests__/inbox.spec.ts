@@ -17,15 +17,35 @@ beforeEach(() => {
 })
 
 describe('inbox messages', () => {
-  it('seeds system notices and shows only self/broadcast messages', () => {
-    const seeded = listMessages('alice')
-    expect(seeded.length).toBe(2)
-    expect(seeded.every((m) => m.kind === 'system')).toBe(true)
+  it('不再注入硬编码系统通知', () => {
+    expect(listMessages('alice')).toHaveLength(0)
+  })
+
+  it('清理旧版本遗留的 system 死通知', () => {
+    localStorage.setItem(
+      'dicego:messages',
+      JSON.stringify([
+        {
+          id: 'sys-old',
+          kind: 'system',
+          from: 'system',
+          fromName: 'DiceGo 平台',
+          to: 'all',
+          title: '胡闹运动会已上线',
+          content: '死通知',
+          createdAt: new Date().toISOString(),
+          read: false,
+        },
+      ]),
+    )
+
+    expect(listMessages('alice')).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('dicego:messages') ?? '[]')).toHaveLength(0)
   })
 
   it('sendMessage is visible to recipient, not to others; unread count works', () => {
     sendMessage('alice', '小爱', 'bob', '来一局象棋')
-    expect(countUnread('bob')).toBe(2) // 1 seeded unread + 1 new
+    expect(countUnread('bob')).toBe(1)
     expect(listMessages('bob').some((m) => m.content === '来一局象棋')).toBe(true)
     expect(listMessages('carol').some((m) => m.content === '来一局象棋')).toBe(false)
 

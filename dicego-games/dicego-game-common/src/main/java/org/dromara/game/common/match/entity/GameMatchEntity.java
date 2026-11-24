@@ -91,4 +91,9 @@ public class GameMatchEntity implements Serializable {
      * 创建时间
      */
     private LocalDateTime createTime;
+
+    /**
+     * 删除标志（0存在 1删除）——清理任务只标记，不物理删除
+     */
+    private String delFlag;
 }

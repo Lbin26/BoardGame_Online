@@ -1,13 +1,12 @@
 /**
- * DiceGo 平台通知：登录状态下轮询消息盒子，聚合未读数，提供已读与发布能力。
- * 数据层仅保留 DiceGo 来源（超管公告 + 版本更新），RuoYi 原生消息不展示。
- * 公告实时性要求不高，采用 30 秒轮询而非 SSE——规避 EventSource 无法携带
- * Authorization 头的鉴权问题，且后端消息盒子对全局广播天然可见。
+ * DiceGo 平台通知：轮询后端 sys_message 列表，聚合未读数，提供已读与发布能力。
+ * 邮件消息中心与大厅「平台消息」共用本 composable，保证两处看到同一份数据。
+ * 公告实时性要求不高，采用 30 秒轮询即可；列表接口公开，未登录也能看平台消息。
  */
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 
 import {
-  fetchMessageBox,
+  fetchPlatformNotices,
   isNoticeRead,
   markAllNoticesRead,
   markNoticeRead,
@@ -19,13 +18,11 @@ import {
 const POLL_MS = 30_000
 
 export interface UseSystemNoticesOptions {
-  /** 是否已登录；未登录不拉取 */
-  loggedIn: Ref<boolean>
   /** 轮询间隔（毫秒），测试可缩短 */
   intervalMs?: number
 }
 
-export function useSystemNotices(options: UseSystemNoticesOptions) {
+export function useSystemNotices(options: UseSystemNoticesOptions = {}) {
   const notices: Ref<SystemNotice[]> = ref([])
   const loading = ref(false)
   const unread = ref(0)
@@ -38,16 +35,11 @@ export function useSystemNotices(options: UseSystemNoticesOptions) {
   }
 
   async function refresh(): Promise<void> {
-    if (!options.loggedIn.value) {
-      notices.value = []
-      unread.value = 0
-      return
-    }
     loading.value = true
     lastError.value = ''
     try {
-      const box = await fetchMessageBox()
-      notices.value = toSystemNotices(box)
+      const rows = await fetchPlatformNotices()
+      notices.value = toSystemNotices(rows)
       recomputeUnread()
     } catch (e) {
       lastError.value = e instanceof Error ? e.message : '加载通知失败'
@@ -90,7 +82,7 @@ export function useSystemNotices(options: UseSystemNoticesOptions) {
 
   onMounted(() => {
     void refresh()
-    if (options.loggedIn.value) startPolling()
+    startPolling()
   })
 
   onUnmounted(stopPolling)

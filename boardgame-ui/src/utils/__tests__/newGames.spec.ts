@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectNewGameKeys, gameCodeToKey, isNewGame } from '@/utils/newGames'
+import { collectNewGameKeys, gameCodeToKey, gameKeyToCode, isNewGame } from '@/utils/newGames'
 
 const NOW = new Date('2026-11-23T16:00:00').getTime()
 
@@ -8,7 +8,9 @@ describe('newGameKeys', () => {
     expect(gameCodeToKey('incan_gold')).toBe('incanGold')
     expect(gameCodeToKey('magical_athlete')).toBe('magicalAthlete')
     expect(gameCodeToKey('splendor')).toBe('splendor')
-    expect(gameCodeToKey('xiangqi')).toBe('chess')
+    expect(gameCodeToKey('xiangqi')).toBe('xiangqi')
+    expect(gameKeyToCode('halliGalli')).toBe('halli_galli')
+    expect(gameKeyToCode('xiangqi')).toBe('xiangqi')
   })
 
   it('近期创建的游戏算新，超过 14 天的不算', () => {

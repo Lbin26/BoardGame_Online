@@ -151,6 +151,22 @@ class AbstractGameWebSocketHandlerTest {
     }
 
     @Test
+    void silentSessionIsNotCountedAndAnyMessageRefreshesIt() throws Exception {
+        WebSocketSession alice = session("alice");
+        handler.afterConnectionEstablished(alice);
+        assertTrue(handler.connectedPlayerNames().contains("alice"));
+
+        // 模拟浏览器崩溃/网络断：连接对象还在但超过 10 分钟没有任何消息
+        alice.getAttributes().put("lastActiveAt",
+            System.currentTimeMillis() - AbstractGameWebSocketHandler.SESSION_IDLE_TTL_MS - 1);
+        assertFalse(handler.connectedPlayerNames().contains("alice"), "半开连接不应计入在线");
+
+        // 收到任意消息即续约（正常对局中玩家不会被误判）
+        handler.handleTextMessage(alice, new TextMessage("{\"type\":\"HEARTBEAT\",\"payload\":{}}"));
+        assertTrue(handler.connectedPlayerNames().contains("alice"));
+    }
+
+    @Test
     void normalDisconnectBroadcastsLeaveAndClearsPresence() throws Exception {
         WebSocketSession alice = session("alice");
         handler.afterConnectionEstablished(alice);

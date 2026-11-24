@@ -12,6 +12,7 @@ import org.dromara.game.common.match.entity.GameMatchPlayerEntity;
 import org.dromara.game.common.match.mapper.GameActionLogMapper;
 import org.dromara.game.common.match.mapper.GameMatchMapper;
 import org.dromara.game.common.match.mapper.GameMatchPlayerMapper;
+import org.dromara.game.common.match.service.GamePlayerStatService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,7 @@ public class DbSplendorMatchRecorder implements SplendorMatchRecorder {
     private final GameMatchMapper matchMapper;
     private final GameMatchPlayerMapper matchPlayerMapper;
     private final GameActionLogMapper actionLogMapper;
+    private final GamePlayerStatService playerStatService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -125,6 +127,8 @@ public class DbSplendorMatchRecorder implements SplendorMatchRecorder {
                 .set(GameMatchPlayerEntity::getNobleCount, r.nobleCount())
                 .set(GameMatchPlayerEntity::getRankNo, i + 1)
                 .set(GameMatchPlayerEntity::getWinFlag, i == 0 ? "1" : "0"));
+            // 战绩汇总写入走公共层，与全游戏统一口径
+            playerStatService.record(room.boundUserIdOf(r.name()), r.vp(), i == 0, now);
         }
         log.info("房间 {} 终局落库: matchId={}, 胜者={}({}VP)", room.getRoomId(), matchId,
             champion.name(), champion.vp());
